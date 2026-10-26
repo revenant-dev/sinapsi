@@ -1,21 +1,744 @@
-The MIT License
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data: blob: https://*.googleusercontent.com; font-src 'self'; connect-src 'self' https://www.googleapis.com https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; worker-src 'self'; manifest-src 'self'; media-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Mappe mentali in 3D, sincronizzate sul tuo Google Drive.">
+<meta name="theme-color" content="#060819">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sinapsi">
+<title>Sinapsi - Web App</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="fonts.css">
+<style>
+:root{
+  --scene:#050716;--panel:rgba(246,245,255,.93);--line:rgba(52,44,130,.16);--ink:#1c1a3f;--ink-soft:#5d5a8a;
+  --field:rgba(255,255,255,.75);--accent:#5b3ff0;--accent-ink:#ffffff;--danger:#c0254b;--on-danger:#ffffff;
+  --ok:#11845b;--warn:#a35c00;
+  --label:#e9ecff;--label-soft:#98a1dc;--label-shadow:rgba(3,4,14,.92);--sel:#ffcf70;--due-late:#ff7d93;--due-soon:#ffc56b;--done:#7ff0b4;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --panel:rgba(11,13,34,.74);--line:rgba(170,178,255,.15);--ink:#e7e9ff;--ink-soft:#9ca2d8;--field:rgba(255,255,255,.06);
+    --accent:#9a89ff;--accent-ink:#0b0b24;--danger:#ff7391;--on-danger:#14051a;--ok:#6fe3a8;--warn:#ffc56b;color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --panel:rgba(11,13,34,.74);--line:rgba(170,178,255,.15);--ink:#e7e9ff;--ink-soft:#9ca2d8;--field:rgba(255,255,255,.06);
+  --accent:#9a89ff;--accent-ink:#0b0b24;--danger:#ff7391;--on-danger:#14051a;--ok:#6fe3a8;--warn:#ffc56b;color-scheme:dark;
+}
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;background:var(--scene);scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;height:100%;overflow:hidden;background:var(--scene);color:var(--ink);
+  font-family:"Bricolage Grotesque",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--scene)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button,input,select,textarea{font-family:inherit}
+[hidden]{display:none !important}
+.glass{background:var(--panel);border:1px solid var(--line);-webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);box-shadow:inset 0 1px 0 rgba(255,255,255,.07)}
+body.readonly .edit-only{display:none !important}
+body:not(.has-ai) .ai-only{display:none !important}
 
-Copyright © 2010-2021 three.js authors
+#stage{position:fixed;inset:0;z-index:0}
+#stage canvas{display:block;width:100%;height:100%}
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+/* Etichette */
+#labels{position:fixed;inset:0;z-index:5;pointer-events:none;overflow:hidden}
+.label{position:absolute;left:0;top:0;transform-origin:50% 100%;white-space:nowrap;max-width:26ch;overflow:hidden;text-overflow:ellipsis;
+  font-size:12.5px;font-weight:600;letter-spacing:.012em;color:var(--label);text-shadow:0 0 12px var(--label-shadow),0 0 3px var(--label-shadow),0 1px 1px var(--label-shadow);
+  padding:3px 9px;border-radius:999px;border:1px solid transparent;transition:background-color .2s ease,border-color .2s ease;pointer-events:auto;cursor:pointer;user-select:none;-webkit-user-select:none;will-change:transform,opacity;display:none}
+.label.root{font-size:17px;font-weight:700}
+.label.imp{font-weight:700}
+.label.sel{color:var(--sel);background:rgba(255,207,112,.10);border-color:rgba(255,207,112,.32);text-shadow:0 0 10px var(--label-shadow)}
+.label.multi{color:#a6efff;background:rgba(143,233,255,.08);border-color:rgba(143,233,255,.28)}
+.label.pinned::before{content:"";display:inline-block;width:5px;height:5px;margin:0 6px 2px 0;background:var(--label-soft);transform:rotate(45deg)}
+.label .more,.label .prog{color:var(--label-soft);font-weight:600}
+.label .prog.full{color:var(--done)}
+.label .due{font-weight:600;color:var(--label-soft)}
+.label .due.late{color:var(--due-late)}
+.label .due.soon{color:var(--due-soon)}
+.label mark{background:none;color:var(--sel);text-decoration:underline}
+.link-label{position:absolute;left:0;top:0;white-space:nowrap;pointer-events:none;display:none;font-size:11.5px;font-style:italic;color:var(--label-soft);text-shadow:0 0 6px var(--label-shadow)}
+.constellation{position:absolute;left:0;top:0;white-space:nowrap;pointer-events:none;display:none;font-size:28px;font-weight:600;letter-spacing:.01em;text-shadow:0 0 18px var(--label-shadow)}
+.constellation.lane{font-size:14px;font-weight:700;letter-spacing:0}
+.tick{position:absolute;left:0;top:0;white-space:nowrap;pointer-events:none;display:none;font-size:12px;color:var(--label-soft);text-shadow:0 0 6px var(--label-shadow)}
+body.picking .label,body.picking #stage canvas{cursor:crosshair}
+#lasso{position:fixed;z-index:6;border:1.5px dashed #a6efff;background:rgba(166,239,255,.08);border-radius:6px;pointer-events:none}
+#drophint{position:fixed;z-index:30;left:0;top:0;pointer-events:none;padding:6px 12px;border-radius:999px;font-size:13.5px;font-weight:600;color:var(--ink);white-space:nowrap}
+#dropmenu{position:fixed;z-index:35;left:0;top:0;width:min(300px,calc(100vw - 16px));padding:12px;border-radius:16px;display:grid;gap:6px;color:var(--ink);box-shadow:0 20px 60px -20px rgba(0,0,0,.8)}
+#dropmenu p{margin:0 0 4px;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dropmenu .hint-text{margin:4px 0 0;font-weight:400;white-space:normal;font-size:12.5px}
+#dropmenu .act{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
+/* Barra superiore */
+#top{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 0;pointer-events:none}
+#top > *{pointer-events:auto}
+.brand{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-width:0;max-width:42vw;border:0;background:none;padding:4px 6px;margin-left:-6px;border-radius:12px;cursor:pointer;color:var(--label);text-align:left;text-shadow:0 1px 10px var(--label-shadow)}
+body.readonly .brand{cursor:default}
+.brand b::before{content:"";display:inline-block;width:11px;height:11px;margin:0 9px 2px 1px;border-radius:50%;vertical-align:middle;background:radial-gradient(circle at 38% 35%,#fff 0 14%,#b9adff 32%,#6b55f0 70%,rgba(107,85,240,0) 72%);box-shadow:0 0 12px rgba(150,130,255,.8)}
+.brand b{font-size:21px;font-weight:700;letter-spacing:-.02em;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand span{font-size:13px;color:var(--label-soft)}
+.row-flex{display:flex;align-items:center;gap:8px}
+.icon-btn{width:42px;height:42px;flex:none;display:grid;place-items:center;border-radius:50%;cursor:pointer;color:var(--ink)}
+.icon-btn svg{width:18px;height:18px}
+.icon-btn:disabled{opacity:.4;cursor:default}
+.dim-btn{font-size:13.5px;font-weight:700;letter-spacing:.02em}
+.search{position:relative;width:min(300px,40vw)}
+.search input{width:100%;font-size:15px;color:var(--ink);border-radius:999px;padding:10px 16px}
+.search input::placeholder{color:var(--ink-soft)}
+#results{position:absolute;right:0;top:calc(100% + 6px);margin:0;padding:6px;list-style:none;border-radius:16px;width:max(100%,300px);max-height:60vh;overflow:auto}
+#results button{display:block;width:100%;text-align:left;font-size:15px;color:var(--ink);background:none;border:0;border-radius:10px;padding:8px 10px;cursor:pointer}
+#results button small{display:block;color:var(--ink-soft);font-size:12.5px;line-height:1.35;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#results button:hover,#results button:focus-visible{background:var(--field)}
+#results mark{background:color-mix(in srgb,var(--accent) 25%,transparent);color:inherit;border-radius:3px}
+#results .empty{padding:9px 10px;color:var(--ink-soft);font-size:14px}
+@media (max-width:560px){.brand b{font-size:18px}#undo-btns .icon-btn{width:38px;height:38px}.search{width:34vw}.search input{padding:9px 12px;font-size:14px}}
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+#filters{position:fixed;z-index:19;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 68px);display:flex;gap:6px;overflow-x:auto;padding:4px 16px;scrollbar-width:none}
+#filters::-webkit-scrollbar{display:none}
+.chip{flex:none;font-size:13.5px;font-weight:600;padding:6px 12px;border-radius:999px;cursor:pointer;color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+
+.bar-note{position:fixed;z-index:21;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 70px);display:flex;gap:10px;align-items:center;max-width:min(640px,calc(100vw - 24px));padding:6px 6px 6px 16px;border-radius:999px;color:var(--ink)}
+.bar-note span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14.5px}
+body.has-filters .bar-note{top:calc(env(safe-area-inset-top,0px) + 112px)}
+#modebar{top:auto !important;bottom:calc(env(safe-area-inset-bottom,0px) + 86px)}
+
+#hint{position:fixed;left:50%;transform:translateX(-50%);z-index:15;margin:0;bottom:calc(env(safe-area-inset-bottom,0px) + 92px);width:min(40ch,calc(100vw - 40px));text-align:center;font-size:14px;line-height:1.45;color:var(--label-soft);text-shadow:0 1px 8px var(--label-shadow);transition:opacity .6s ease;pointer-events:none}
+#hint.gone{opacity:0}
+
+#minimap{position:fixed;z-index:14;left:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);width:150px;height:150px;border-radius:18px;cursor:pointer;background:rgba(10,12,32,.55);border:1px solid rgba(170,178,255,.18)}
+@media (max-width:720px){#minimap{width:110px;height:110px;bottom:calc(env(safe-area-inset-bottom,0px) + 90px);left:10px}body.panel-open #minimap{display:none}}
+
+/* Dock */
+.dock{position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:20;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 14px)}
+.dock .bar{display:flex;gap:4px;padding:6px;border-radius:999px;box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 22px 60px -20px rgba(0,0,0,.85),0 0 0 1px rgba(150,160,255,.05)}
+.dock-btn{display:flex;align-items:center;gap:8px;border:0;background:transparent;color:var(--ink);font-size:14px;font-weight:600;padding:10px 15px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.dock-btn svg{width:18px;height:18px;flex:none}
+.dock-btn:hover{background:var(--field)}
+.dock-btn.primary{background:var(--accent);color:var(--accent-ink)}
+.dock-btn[aria-pressed="true"]{background:var(--field);color:var(--accent)}
+@media (max-width:560px){.dock .bar{border-radius:22px}.dock-btn{flex-direction:column;gap:3px;font-size:11.5px;padding:8px 11px;border-radius:16px}}
+
+#menu{position:fixed;z-index:26;right:max(12px,calc(50% - 250px));bottom:calc(env(safe-area-inset-bottom,0px) + 84px);width:min(300px,calc(100vw - 24px));max-height:min(72vh,640px);overflow:auto;padding:6px;border-radius:18px;box-shadow:0 26px 70px -24px rgba(0,0,0,.75)}
+#menu button{display:flex;justify-content:space-between;align-items:center;gap:16px;width:100%;font-size:15px;color:var(--ink);background:none;border:0;border-radius:12px;padding:10px 12px;cursor:pointer;text-align:left}
+#menu button:hover{background:var(--field)}
+#menu button:disabled{opacity:.45;cursor:default}
+#menu .state{font-size:13px;color:var(--ink-soft)}
+#menu button[aria-checked="true"] .state{color:var(--accent);font-weight:600}
+#menu hr{border:0;border-top:1px solid var(--line);margin:4px 8px}
+
+/* Pannello */
+#panel{position:fixed;z-index:25;right:16px;top:calc(env(safe-area-inset-top,0px) + 72px);width:min(396px,calc(100vw - 32px));max-height:calc(100% - 180px);overflow:auto;overscroll-behavior:contain;border-radius:22px;padding:16px 18px 18px;box-shadow:0 26px 70px -24px rgba(0,0,0,.75)}
+body.has-filters #panel{top:calc(env(safe-area-inset-top,0px) + 116px);max-height:calc(100% - 224px)}
+.title-row{display:flex;gap:10px;align-items:flex-start}
+.node-dot{width:12px;height:12px;border-radius:50%;background:var(--node,#ece8ff);box-shadow:0 0 14px var(--node,#ece8ff);margin-top:14px;flex:none}
+.title-input{flex:1;min-width:0;font-size:22px;font-weight:700;line-height:1.2;letter-spacing:-.015em;color:var(--ink);background:transparent;border:0;border-bottom:1.5px solid transparent;padding:6px 0 4px;border-radius:0}
+.title-input:hover{border-bottom-color:var(--line)}
+.title-input:focus{outline:none;border-bottom-color:var(--accent)}
+body.readonly .title-input{border-bottom-color:transparent !important}
+#g-title{flex:1;margin:6px 0 0;font-size:21px;letter-spacing:-.015em}
+.close{flex:none;width:36px;height:36px;border-radius:50%;border:0;background:var(--field);color:var(--ink-soft);font-size:20px;line-height:1;cursor:pointer;margin-top:2px}
+.chips-meta{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 0 22px}
+.meta-chip{font-size:12.5px;color:var(--ink-soft);padding:2px 9px;border-radius:999px;border:1px solid var(--line)}
+.meta-chip.late{color:var(--danger);border-color:currentColor}
+.meta-chip.soon{color:var(--warn);border-color:currentColor}
+.meta-chip.done{color:var(--ok);border-color:currentColor}
+.progress{margin:10px 0 0 22px;height:6px;border-radius:99px;background:var(--line);overflow:hidden}
+.progress i{display:block;height:100%;background:var(--ok);border-radius:99px}
+.thumb{display:flex;gap:12px;align-items:center;margin:14px 0 0}
+.thumb img{width:60px;height:60px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 2px var(--node,#ece8ff)}
+.section{margin-top:16px}
+.section h3{margin:0 0 8px;font-size:13.5px;font-weight:600;color:var(--ink-soft)}
+.two-col{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:12px}
+.hint-text{margin:6px 0 0;font-size:13px;line-height:1.45;color:var(--ink-soft)}
+.note-view,.note-edit{font-size:15px;line-height:1.55;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-height:44px;overflow-wrap:anywhere}
+.note-edit{min-height:120px;max-height:46vh;overflow:auto;cursor:text;outline:none}
+.note-edit:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.note-edit:empty::before{content:attr(data-placeholder);color:var(--ink-soft);pointer-events:none}
+body.readonly .note-edit{cursor:default;min-height:44px}
+:is(.note-view,.note-edit) p{margin:0 0 .55em}
+:is(.note-view,.note-edit) > :last-child{margin-bottom:0}
+:is(.note-view,.note-edit) :is(ul,ol){margin:.1em 0 .55em;padding-left:1.4em}
+:is(.note-view,.note-edit) li{margin:.12em 0}
+:is(.note-view,.note-edit) li.task{list-style:none;position:relative;margin-left:-1.4em;padding-left:1.75em}
+:is(.note-view,.note-edit) .cb{position:absolute;left:0;top:.2em;width:17px;height:17px;border-radius:5px;border:1.5px solid var(--ink-soft);background:var(--panel);cursor:pointer;user-select:none;-webkit-user-select:none}
+.note-view .cb{cursor:default}
+:is(.note-view,.note-edit) li.task.done{color:var(--ink-soft);text-decoration:line-through}
+:is(.note-view,.note-edit) li.task.done .cb{background:var(--ok);border-color:var(--ok)}
+:is(.note-view,.note-edit) li.task.done .cb::after{content:"";position:absolute;left:4.5px;top:1px;width:4px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+:is(.note-view,.note-edit) h4{margin:.2em 0 .35em;font-size:16.5px;letter-spacing:-.01em}
+:is(.note-view,.note-edit) code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em;background:var(--line);padding:1px 5px;border-radius:5px}
+:is(.note-view,.note-edit) a{color:var(--accent);text-underline-offset:2px}
+:is(.note-view,.note-edit) mark{background:color-mix(in srgb,var(--sel) 55%,transparent);color:inherit;border-radius:3px}
+.note-tools{display:flex;flex-wrap:wrap;align-items:center;gap:2px;margin-top:6px;padding:4px;border-radius:12px;background:var(--field);border:1px solid var(--line)}
+.note-tools button{width:36px;height:32px;border-radius:8px;border:0;background:none;color:var(--ink);cursor:pointer;display:grid;place-items:center;font-size:15px;line-height:1}
+.note-tools button:hover{background:var(--line)}
+.note-tools button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.note-tools svg{width:18px;height:18px}
+.note-tools .sep{width:1px;height:20px;background:var(--line);margin:0 4px}
+.link-row{display:flex;gap:6px;margin-top:6px}
+.quick{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:2px;margin:14px -4px 2px}
+.qa{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0 6px;border-radius:12px;border:1px solid transparent;background:none;color:var(--ink);font-size:11px;letter-spacing:-.01em;font-weight:600;cursor:pointer;min-width:0}
+.qa svg{width:20px;height:20px}
+.qa span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qa:hover{background:var(--field);border-color:var(--line)}
+.qa.primary{background:var(--accent);color:var(--accent-ink)}
+.qa[aria-pressed="true"],.qa[aria-expanded="true"]{color:var(--accent);background:var(--field);border-color:var(--line)}
+.popover{position:fixed;z-index:36;left:0;top:0;min-width:240px;padding:6px;border-radius:14px;box-shadow:0 22px 60px -20px rgba(0,0,0,.8);color:var(--ink)}
+.popover button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font-size:14.5px;color:var(--ink);background:none;border:0;border-radius:10px;padding:9px 10px;cursor:pointer}
+.popover button:hover{background:var(--field)}
+.popover button:disabled{opacity:.45;cursor:default}
+.popover button.danger{color:var(--danger)}
+.popover button.danger.armed{background:var(--danger);color:var(--on-danger)}
+.popover svg{width:18px;height:18px;flex:none}
+.popover hr{border:0;border-top:1px solid var(--line);margin:4px 8px}
+.ptabs{margin:12px 0 0;border-bottom:1px solid var(--line);gap:0;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.ptabs::-webkit-scrollbar{display:none}
+.tab{flex:none;border:0;background:none;padding:9px 10px;font-size:14px;font-weight:600;color:var(--ink-soft);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;white-space:nowrap}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tab span{font-weight:400;color:var(--ink-soft)}
+.pane{padding-top:14px}
+.pane > .section:first-child{margin-top:0}
+.field{width:100%;font-size:14.5px;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0}
+.seg{display:flex;gap:4px}
+.seg button{flex:1;min-width:0;padding:0;height:34px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink-soft);font-size:14px;font-weight:600;cursor:pointer}
+.seg button[aria-checked="true"]{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tag{display:inline-flex;align-items:center;gap:2px;font-size:13.5px;padding:3px 3px 3px 10px;border-radius:999px;background:var(--field);border:1px solid var(--line)}
+body.readonly .tag{padding-right:10px}
+.tag button{border:0;background:none;color:var(--ink-soft);font-size:16px;line-height:1;cursor:pointer;width:22px;height:22px;border-radius:50%}
+.tag-input{flex:1;min-width:130px;font-size:14px;color:var(--ink);background:transparent;border:0;border-bottom:1px solid var(--line);padding:6px 2px;border-radius:0}
+.tag-input:focus{outline:none;border-bottom-color:var(--accent)}
+.swatches{display:flex;gap:10px;flex-wrap:wrap}
+.sw{width:30px;height:30px;border-radius:50%;border:0;background:var(--c);cursor:pointer;box-shadow:0 0 0 1px var(--line),0 0 12px -2px var(--c)}
+.sw[aria-checked="true"]{box-shadow:0 0 0 2px var(--panel),0 0 0 4px var(--ink)}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:18px}
+.act{font-size:14px;font-weight:600;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--field);color:var(--ink);cursor:pointer;text-align:left;line-height:1.25}
+.act:disabled{opacity:.5;cursor:default}
+.act.small{padding:7px 11px;font-size:13px}
+.act.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.act.danger{color:var(--danger)}
+.act.danger.armed{background:var(--danger);color:var(--on-danger);border-color:transparent}
+.act.wide{grid-column:1 / -1}
+.ai-box{margin-top:10px;padding:12px;border-radius:12px;border:1px dashed var(--accent);font-size:14.5px;line-height:1.5}
+.ai-box .ai-status{color:var(--ink-soft);font-size:13.5px;margin:0 0 6px}
+.ai-box ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.ai-box li{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;padding:8px 10px;border-radius:10px;background:var(--field)}
+.ai-box li b{font-size:14.5px}
+.ai-box li small{grid-column:1;color:var(--ink-soft);font-size:13px;line-height:1.35}
+.ai-box li .act{grid-row:1 / span 2;grid-column:2}
+.ai-text{white-space:pre-wrap}
+.links-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.links-list li{display:grid;grid-template-columns:1fr auto;gap:4px 6px;align-items:center;padding:8px 4px 8px 12px;border-radius:12px;background:var(--field);border:1px solid var(--line)}
+.links-list .go{grid-column:1;text-align:left;font-size:14.5px;font-weight:600;color:var(--ink);background:none;border:0;padding:0;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.links-list .dir{color:var(--ink-soft);font-weight:400;margin-right:4px}
+.links-list .rm{grid-row:1 / span 3;grid-column:2;width:34px;height:34px;border-radius:50%;border:0;background:none;color:var(--ink-soft);font-size:19px;cursor:pointer}
+.links-list .rm:hover{color:var(--danger)}
+.links-list .lrow{grid-column:1;display:flex;gap:6px;min-width:0}
+.links-list input{flex:1;min-width:0;font-size:13.5px;font-style:italic;color:var(--ink);background:transparent;border:0;border-bottom:1px dashed var(--line);padding:3px 0;border-radius:0}
+.links-list input:focus{outline:none;border-bottom-color:var(--accent)}
+.links-list select{font-size:13px;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:8px;padding:2px 4px;max-width:46%}
+.links-list .ltype{font-size:12.5px;color:var(--ink-soft)}
+.links-empty{font-size:14px;color:var(--ink-soft);margin:0}
+body.panel-open #hint{display:none}
+@media (max-width:720px){
+  #panel{left:10px;right:10px;width:auto;top:auto !important;bottom:calc(env(safe-area-inset-bottom,0px) + 86px);max-height:52% !important;padding:14px 14px 16px}
+  .title-input{font-size:20px}
+}
+
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 72px);transform:translate(-50%,-8px);z-index:40;max-width:min(470px,calc(100vw - 32px));padding:11px 16px;border-radius:14px;font-size:14.5px;line-height:1.4;color:var(--ink);opacity:0;pointer-events:none;transition:opacity .25s ease,transform .25s ease}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+body.has-bar #toast{top:calc(env(safe-area-inset-top,0px) + 124px)}
+
+dialog{width:min(600px,calc(100vw - 24px));max-height:calc(100% - 40px);border-radius:22px;padding:20px;color:var(--ink)}
+dialog::backdrop{background:rgba(3,4,14,.55)}
+dialog h2{margin:0 0 6px;font-size:21px;letter-spacing:-.01em}
+dialog p.lead{margin:0 0 12px;color:var(--ink-soft);font-size:14.5px;line-height:1.5;max-width:62ch}
+dialog textarea{width:100%;height:min(34vh,280px);resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.45;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:12px;padding:10px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}
+.tabs .chip{background:var(--field);border:1px solid var(--line)}
+.tabs .chip[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+.dlg-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.dlg-actions .act{text-align:center}
+.dlg-actions .spacer{flex:1}
+.status{min-height:1.4em;margin:10px 0 0;font-size:14px;color:var(--ink-soft)}
+.setting{display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:center;margin:14px 0}
+.setting label{font-size:15px;font-weight:600}
+.setting output{font-size:14px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.setting input[type=range]{grid-column:1 / -1;width:100%;accent-color:var(--accent)}
+.check{display:flex;gap:10px;align-items:flex-start;margin:14px 0;font-size:15px;cursor:pointer}
+.check input{width:20px;height:20px;margin:1px 0 0;accent-color:var(--accent);flex:none}
+.check span small{display:block;color:var(--ink-soft);font-size:13px;line-height:1.4;margin-top:2px}
+.list{list-style:none;margin:0;padding:0;display:grid;gap:8px;max-height:min(46vh,380px);overflow:auto}
+.list li{display:grid;grid-template-columns:1fr;gap:6px;padding:10px 12px;border-radius:14px;background:var(--field);border:1px solid var(--line)}
+.list li.current{border-color:var(--accent)}
+.list input.name{font-size:16px;font-weight:700;color:var(--ink);background:transparent;border:0;border-bottom:1px solid transparent;padding:2px 0;border-radius:0;min-width:0}
+.list input.name:focus{outline:none;border-bottom-color:var(--accent)}
+.list .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.list .info{font-size:13px;color:var(--ink-soft);margin-right:auto}
+.list .diff{font-size:13.5px;line-height:1.5;color:var(--ink-soft);white-space:pre-wrap}
+.layout-opt{display:flex;gap:12px;align-items:flex-start;padding:12px;border-radius:14px;border:1px solid var(--line);background:var(--field);cursor:pointer;margin:8px 0}
+.layout-opt input{width:20px;height:20px;margin:2px 0 0;accent-color:var(--accent);flex:none}
+.layout-opt b{display:block;font-size:15.5px}
+.layout-opt small{display:block;color:var(--ink-soft);font-size:13.5px;line-height:1.4;margin-top:2px}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;align-items:baseline;font-size:14.5px;margin:0}
+.keys dt{white-space:nowrap}
+.keys dd{margin:0;color:var(--ink-soft)}
+kbd{font-family:inherit;font-size:12.5px;font-weight:600;padding:2px 7px;border-radius:6px;border:1px solid var(--line);background:var(--field);color:var(--ink)}
+.inline-form{display:flex;gap:8px;margin:0 0 12px}
+.inline-form .field{flex:1}
+
+.pres-card{position:fixed;z-index:22;left:20px;top:calc(env(safe-area-inset-top,0px) + 20px);width:min(440px,calc(100vw - 40px));max-height:46%;overflow:auto;padding:18px 20px;border-radius:22px;color:var(--ink);box-shadow:0 26px 70px -24px rgba(0,0,0,.75)}
+.pres-step{font-size:13px;color:var(--ink-soft);margin-bottom:4px}
+.pres-card h2{margin:0 0 10px;font-size:clamp(24px,4vw,34px);line-height:1.1;letter-spacing:-.02em}
+.pres-card .note-view{background:none;border:0;padding:0;cursor:default;min-height:0}
+body.presenting #top,body.presenting #dock,body.presenting #panel,body.presenting #filters,body.presenting #hint,body.presenting .bar-note,body.presenting #menu,body.presenting #minimap{display:none !important}
+@media (max-width:720px){.pres-card{left:10px;right:10px;width:auto;top:calc(env(safe-area-inset-top,0px) + 10px);max-height:38%}}
+
+#fatal{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:24px;background:var(--scene);color:var(--label);text-align:center;font-size:17px;line-height:1.5}
+
+/* Account, accesso e sincronizzazione */
+#acct-btn{position:relative;padding:0;overflow:visible}
+#acct-btn .av{width:100%;height:100%;border-radius:50%;display:grid;place-items:center;overflow:hidden;font-weight:700;font-size:15px;color:var(--ink)}
+#acct-btn .av img{width:100%;height:100%;object-fit:cover}
+#acct-btn .av svg{width:20px;height:20px}
+#acct-btn::after{content:"";position:absolute;right:-1px;bottom:-1px;width:12px;height:12px;border-radius:50%;border:2px solid var(--scene);background:#8a90b8;display:none}
+#acct-btn.in::after{display:block}
+#acct-btn[data-state="ok"]::after{background:#3ddc97}
+#acct-btn[data-state="pending"]::after,#acct-btn[data-state="syncing"]::after{background:#ffc56b}
+#acct-btn[data-state="error"]::after,#acct-btn[data-state="reauth"]::after{background:#ff6b81}
+#acct-menu{width:min(320px,calc(100vw - 16px))}
+#acct-menu .who{padding:8px 10px 2px;min-width:0}
+#acct-menu .who b{display:block;font-size:15.5px}
+#acct-menu .who span{display:block;font-size:13px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#acct-menu .stat{margin:6px 10px 8px;font-size:13.5px;line-height:1.45;color:var(--ink-soft)}
+#acct-menu .stat.bad{color:var(--danger)}
+#syncbar{top:auto !important;bottom:calc(env(safe-area-inset-bottom,0px) + 86px)}
+.overlay{position:fixed;inset:0;z-index:55;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at 50% 38%,rgba(52,38,140,.55),rgba(5,7,22,.97) 68%)}
+.auth-card{width:min(420px,100%);border-radius:24px;padding:28px 24px 22px;text-align:center;color:var(--ink);display:grid;gap:12px;box-shadow:0 30px 80px -30px rgba(0,0,0,.9)}
+.auth-card h1{margin:0;font-size:30px;letter-spacing:-.02em}
+.auth-card p{margin:0;color:var(--ink-soft);font-size:15px;line-height:1.5}
+.auth-card .act{display:flex;justify-content:center;align-items:center;gap:10px;text-align:center;padding:12px 14px;font-size:15px}
+.auth-card .act svg{width:20px;height:20px;flex:none}
+.auth-card .small-print{font-size:13px}
+.orb{width:64px;height:64px;margin:0 auto 4px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#fff,#c9bcff 30%,#6b52ff 66%,transparent 70%);box-shadow:0 0 44px 12px rgba(140,120,255,.45);animation:orb 2.4s ease-in-out infinite}
+@keyframes orb{50%{transform:scale(1.08);box-shadow:0 0 64px 20px rgba(140,120,255,.6)}}
+#splash p{margin:16px 0 0;text-align:center;color:var(--label-soft);font-size:15px}
+@media (prefers-reduced-motion: reduce){.orb{animation:none}}
+@media (prefers-reduced-motion: reduce){#toast,#hint{transition:none}}
+
+/* ===== Elenco e agenda ===== */
+#b-side{position:relative}
+.badge{position:absolute;top:1px;right:1px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--danger);color:var(--on-danger);font-size:10.5px;font-weight:700;display:grid;place-items:center;line-height:1}
+#side{position:fixed;z-index:24;left:16px;top:calc(env(safe-area-inset-top,0px) + 72px);bottom:calc(env(safe-area-inset-bottom,0px) + 92px);width:min(340px,calc(100vw - 32px));display:flex;flex-direction:column;border-radius:22px;padding:10px 12px 12px;box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 26px 70px -24px rgba(0,0,0,.75)}
+body.has-filters #side{top:calc(env(safe-area-inset-top,0px) + 116px)}
+body.side-open #minimap{display:none}
+.side-head{display:flex;align-items:center;gap:8px}
+.stabs{flex:1;margin:0;border-bottom:1px solid var(--line)}
+.spane{flex:1;min-height:0;display:flex;flex-direction:column;padding-top:10px}
+#side-filter{margin-bottom:8px}
+.side-hint{margin:8px 2px 0;font-size:12.5px}
+.outline{list-style:none;margin:0;padding:0 2px 0 0;overflow:auto;flex:1;min-height:0;overscroll-behavior:contain}
+.orow{display:flex;align-items:center;gap:6px;min-height:36px;padding-right:4px;border-radius:10px;cursor:pointer;color:var(--ink);font-size:14.5px;outline-offset:-2px}
+.orow:hover{background:var(--field)}
+.orow.sel{background:color-mix(in srgb,var(--accent) 20%,transparent)}
+.orow.hid{opacity:.55}
+.otog{width:26px;height:26px;flex:none;border:0;background:none;color:var(--ink-soft);border-radius:7px;cursor:pointer;display:grid;place-items:center;padding:0}
+.otog svg{width:14px;height:14px;transition:transform .15s ease}
+.otog[aria-expanded="true"] svg{transform:rotate(90deg)}
+.otog.leaf{visibility:hidden}
+.odot{width:9px;height:9px;border-radius:50%;flex:none;background:var(--c);box-shadow:0 0 8px var(--c)}
+.olab{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.orow.root .olab{font-weight:700}
+.obadge{flex:none;font-size:12px;font-weight:600;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.obadge.late{color:var(--danger)}.obadge.soon{color:var(--warn)}.obadge.full{color:var(--ok)}
+.oadd{flex:none;width:28px;height:28px;border:0;border-radius:8px;background:none;color:var(--ink-soft);font-size:18px;line-height:1;cursor:pointer;opacity:0}
+.oadd:hover{background:var(--line);color:var(--ink)}
+.orow:hover .oadd,.orow.sel .oadd,.oadd:focus-visible{opacity:1}
+.orename{flex:1;min-width:0;font:inherit;font-size:14.5px;color:var(--ink);background:var(--field);border:1px solid var(--accent);border-radius:7px;padding:3px 6px}
+.agroup{margin:2px 0 12px}
+.agroup h3{margin:6px 4px 8px;font-size:13.5px;font-weight:600;color:var(--ink-soft)}
+.agroup.late h3{color:var(--danger)}
+.aitem{display:grid;grid-template-columns:auto 1fr auto;gap:2px 10px;align-items:center;width:100%;text-align:left;padding:9px 10px;border-radius:12px;border:1px solid var(--line);background:var(--field);color:var(--ink);cursor:pointer;margin-bottom:6px;font:inherit}
+.aitem:hover{border-color:var(--accent)}
+.aitem .odot{grid-row:1 / span 2}
+.aitem b{font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.aitem small{grid-column:2;font-size:12.5px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.aitem .when{grid-row:1 / span 2;grid-column:3;font-size:12.5px;font-weight:600;color:var(--ink-soft);text-align:right;white-space:nowrap}
+.aitem .when.late{color:var(--danger)}.aitem .when.soon{color:var(--warn)}
+.agenda-empty{list-style:none;color:var(--ink-soft);font-size:14px;line-height:1.5;padding:6px 4px}
+/* ===== Notifiche con azione ===== */
+#toast{display:flex;align-items:center;gap:12px}
+#toast.has-action{pointer-events:auto}
+#toast-act{flex:none}
+/* ===== Telefono ===== */
+.grip{display:none}
+@media (min-width:561px){.mobile-only{display:none !important}}
+@media (max-width:560px){
+  #undo-btns{display:none !important}
+  .search{display:none}
+  body.search-open .search{display:block;position:fixed;left:10px;right:10px;top:calc(env(safe-area-inset-top,0px) + 10px);width:auto;z-index:31}
+  body.search-open .search input{padding:12px 16px}
+  body.search-open #results{width:100%}
+  body.search-open #top .brand{visibility:hidden}
+  .brand{max-width:44vw}
+  #top .row-flex{gap:6px}
+  #top .icon-btn{width:38px;height:38px}
+  .constellation{font-size:19px}
+}
+@media (max-width:720px){
+  #side{left:0;right:0;top:0;bottom:0;width:auto;border-radius:0;z-index:32;padding:calc(env(safe-area-inset-top,0px) + 10px) 12px calc(env(safe-area-inset-bottom,0px) + 12px)}
+  body.has-filters #side{top:0}
+  .grip{display:flex;justify-content:center;align-items:center;width:100%;height:22px;margin:-10px 0 2px;padding:0;background:none;border:0;cursor:pointer;touch-action:none}
+  .grip span{width:44px;height:5px;border-radius:3px;background:var(--ink-soft);opacity:.45}
+  body.panel-tall #panel{max-height:calc(100% - 110px) !important}
+  .orow{min-height:42px}
+  .oadd{opacity:1}
+  .orow:not(.sel) .oadd{display:none}
+}
+@media (pointer:coarse){
+  input:not(.title-input),textarea,select,.note-edit{font-size:16px !important}
+  button,.orow,.aitem,.label{touch-action:manipulation}
+}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="labels"></div>
+<div id="lasso" hidden></div>
+<div id="drophint" class="glass" hidden></div>
+<div id="dropmenu" class="glass" hidden role="dialog" aria-labelledby="dm-title">
+  <p id="dm-title"></p>
+  <button id="dm-move" class="act primary" type="button"></button>
+  <button id="dm-link" class="act" type="button"></button>
+  <button id="dm-cancel" class="act" type="button">Annulla</button>
+  <p class="hint-text">Per saltare questa domanda: tieni premuto Alt mentre rilasci per collegare, Maiusc per spostare. Il comportamento predefinito si sceglie in Aspetto.</p>
+</div>
+<canvas id="minimap" width="300" height="300" aria-label="Minimappa vista dall’alto: tocca un punto per volarci" hidden></canvas>
+
+<header id="top">
+  <button id="maps-btn" class="brand" type="button" aria-label="Le mie mappe"><b id="map-name">Sinapsi</b><span id="count"></span></button>
+  <div class="row-flex">
+    <button id="b-side" class="icon-btn glass" type="button" aria-label="Elenco e agenda" title="Elenco e agenda" aria-expanded="false" aria-controls="side"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor" stroke="none"/></svg><span class="badge" id="side-badge" hidden></span></button>
+    <button id="acct-btn" class="icon-btn glass" type="button" hidden aria-haspopup="true" aria-expanded="false" aria-controls="acct-menu"><span class="av" id="acct-av"></span></button>
+    <button id="b-dim" class="icon-btn glass dim-btn" type="button" aria-label="Passa alla vista 2D" title="Passa alla vista 2D">2D</button>
+    <div id="undo-btns" class="row-flex edit-only" style="gap:6px">
+      <button id="b-undo" class="icon-btn glass" type="button" aria-label="Annulla" title="Annulla (Ctrl+Z)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+      <button id="b-redo" class="icon-btn glass" type="button" aria-label="Ripristina" title="Ripristina (Ctrl+Y)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+    </div>
+    <button id="b-search" class="icon-btn glass mobile-only" type="button" aria-label="Cerca"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+    <div class="search">
+      <input id="q" class="glass" type="search" placeholder="Cerca idee, tag e note" aria-label="Cerca idee, tag e note" autocomplete="off">
+      <ul id="results" class="glass" hidden></ul>
+    </div>
+  </div>
+</header>
+
+<div id="filters" hidden role="toolbar" aria-label="Filtra per tag"></div>
+<div id="pathbar" class="bar-note glass" hidden><span id="path-text"></span><button id="path-close" class="act small" type="button">Chiudi percorso</button></div>
+<div id="modebar" class="bar-note glass" hidden><span>Selezione multipla: tocca le idee o trascina un riquadro.</span><button id="mode-done" class="act small primary" type="button">Fine</button></div>
+
+<p id="hint">Trascina lo sfondo per ruotare, pizzica o usa la rotella per lo zoom. Tocca un’idea per aprirla, tienila premuta e trascinala per spostarla. Premi <b>?</b> per le scorciatoie.</p>
+<div id="toast" class="glass" role="status" aria-live="polite"><span id="toast-text"></span><button id="toast-act" class="act small" type="button" hidden></button></div>
+
+<aside id="side" class="glass" hidden aria-label="Elenco e agenda">
+  <div class="side-head">
+    <div class="tabs stabs" role="tablist" aria-label="Elenco e agenda">
+      <button class="tab" type="button" role="tab" data-stab="list">Elenco</button>
+      <button class="tab" type="button" role="tab" data-stab="agenda">Agenda <span id="agenda-count"></span></button>
+    </div>
+    <button id="side-close" class="close" type="button" aria-label="Chiudi elenco e agenda">×</button>
+  </div>
+  <div class="spane" data-spane="list">
+    <input id="side-filter" class="field" type="search" placeholder="Filtra per titolo o tag" aria-label="Filtra l’elenco" autocomplete="off">
+    <ul id="outline" class="outline" role="tree" aria-label="Idee della mappa"></ul>
+    <p class="hint-text side-hint edit-only">Doppio clic su un titolo per rinominarlo, + per aggiungere un’idea sotto.</p>
+  </div>
+  <div class="spane" data-spane="agenda" hidden><div id="agenda" class="outline"></div></div>
+</aside>
+<aside id="panel" class="glass" hidden aria-label="Idea selezionata">
+  <button id="panel-grip" class="grip" type="button" aria-label="Espandi il pannello"><span></span></button>
+  <div id="single">
+    <div class="title-row">
+      <span class="node-dot" aria-hidden="true"></span>
+      <input id="f-title" class="title-input" aria-label="Titolo dell’idea" maxlength="120">
+      <button id="b-close" class="close" type="button" aria-label="Chiudi">×</button>
+    </div>
+    <div class="chips-meta" id="f-meta"></div>
+    <div class="progress" id="f-progress" hidden><i></i></div>
+    <div class="quick" role="toolbar" aria-label="Azioni sull’idea">
+      <button id="b-child" class="qa primary edit-only" type="button" title="Aggiungi un’idea figlia (Tab)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Ramo</span></button>
+      <button id="b-link" class="qa edit-only" type="button" title="Collega a un’altra idea"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg><span>Collega</span></button>
+      <button id="b-path" class="qa" type="button" title="Mostra la catena di collegamenti verso un’altra idea"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.5"/></svg><span>Percorso</span></button>
+      <button id="b-collapse" class="qa" type="button" aria-pressed="false" title="Nascondi o mostra le idee di questo ramo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg><span>Riduci</span></button>
+      <button id="b-pin" class="qa edit-only" type="button" aria-pressed="false" title="Fissa la posizione dell’idea"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 3h6l-1 6 3 4H7l3-4z"/></svg><span>Fissa</span></button>
+      <button id="b-more" class="qa edit-only" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="node-menu" title="Altre azioni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg><span>Altro</span></button>
+    </div>
+    <div class="tabs ptabs" role="tablist" aria-label="Sezioni dell’idea">
+      <button class="tab" type="button" role="tab" data-tab="note">Nota</button>
+      <button class="tab" type="button" role="tab" data-tab="details">Dettagli</button>
+      <button class="tab" type="button" role="tab" data-tab="links">Collegamenti <span id="links-count"></span></button>
+      <button class="tab ai-only edit-only" type="button" role="tab" data-tab="ai">Claude</button>
+    </div>
+    <div class="pane" data-pane="note">
+      <div class="thumb" id="f-thumb" hidden><img id="f-img" alt=""></div>
+      <div id="f-note" class="note-edit" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Nota" data-placeholder="Scrivi una nota…" spellcheck="true"></div>
+      <div class="note-tools edit-only" role="toolbar" aria-label="Formattazione della nota">
+        <button type="button" data-cmd="bold" aria-pressed="false" title="Grassetto (Ctrl+B)" aria-label="Grassetto"><b>B</b></button>
+        <button type="button" data-cmd="italic" aria-pressed="false" title="Corsivo (Ctrl+I)" aria-label="Corsivo"><i style="font-family:Georgia,serif">I</i></button>
+        <button type="button" data-cmd="heading" aria-pressed="false" title="Titoletto" aria-label="Titoletto"><b style="font-size:13px">T</b></button>
+        <span class="sep" aria-hidden="true"></span>
+        <button type="button" data-cmd="ul" aria-pressed="false" title="Elenco puntato" aria-label="Elenco puntato"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg></button>
+        <button type="button" data-cmd="ol" aria-pressed="false" title="Elenco numerato" aria-label="Elenco numerato"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10"/><path d="M4 4.5h1.5V9M4 9h3M4 14.5c0-1.2 3-1.2 3 0 0 1-3 1.8-3 3.5h3"/></svg></button>
+        <button type="button" data-cmd="task" aria-pressed="false" title="Attività da spuntare" aria-label="Attività da spuntare"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4" width="6" height="6" rx="1.3"/><path d="M5 7.2l1.2 1.2L8.4 6"/><path d="M13 7h8"/><rect x="3.5" y="14" width="6" height="6" rx="1.3"/><path d="M13 17h8"/></svg></button>
+        <span class="sep" aria-hidden="true"></span>
+        <button type="button" data-cmd="link" title="Inserisci un link" aria-label="Inserisci un link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"/></svg></button>
+        <button type="button" data-cmd="clear" title="Togli la formattazione" aria-label="Togli la formattazione"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 5h12M11 5 8 19"/><path d="m15 14 5 5M20 14l-5 5"/></svg></button>
+      </div>
+      <div class="link-row" id="link-row" hidden><input id="link-url" class="field" type="url" placeholder="https://…" aria-label="Indirizzo del link"><button id="link-ok" class="act small primary" type="button">Applica</button><button id="link-cancel" class="act small" type="button">Annulla</button></div>
+      <p class="hint-text edit-only">Tocca un quadratino per spuntare un’attività. Per aprire un link tienilo premuto con Ctrl (⌘ su Mac) e fai clic.</p>
+    </div>
+    <div class="pane" data-pane="details" hidden>
+      <div class="section"><h3><label for="f-due">Scadenza</label></h3><div class="row-flex"><input id="f-due" class="field" type="date"><button id="b-due-clear" class="close edit-only" type="button" aria-label="Rimuovi la scadenza" hidden>×</button></div></div>
+      <div class="section"><h3>Importanza</h3><div class="seg" id="f-imp" role="radiogroup" aria-label="Importanza"></div><p class="hint-text">Più è alta, più grande e luminosa è la sfera.</p></div>
+      <div class="section"><h3>Tag</h3><div class="tags" id="f-tags"></div></div>
+      <div class="section edit-only"><h3>Colore</h3><div class="swatches" id="swatches" role="radiogroup" aria-label="Colore"></div></div>
+    </div>
+    <div class="pane" data-pane="links" hidden><ul class="links-list" id="f-links"></ul></div>
+    <div class="pane ai-only edit-only" data-pane="ai" hidden>
+      <p class="hint-text" style="margin-top:0">Claude legge questa idea, il suo percorso dall’idea centrale e il ramo che parte da lei.</p>
+      <div class="actions" style="margin-top:10px">
+        <button id="ai-expand" class="act" type="button">Proponi sotto-idee</button>
+        <button id="ai-summary" class="act" type="button">Riassumi il ramo</button>
+      </div>
+      <div id="ai-box" class="ai-box" hidden></div>
+    </div>
+  </div>
+  <div id="group" hidden>
+    <div class="title-row"><h2 id="g-title"></h2><button id="g-close" class="close" type="button" aria-label="Deseleziona tutte">×</button></div>
+    <p class="hint-text">Trascina una delle idee selezionate per spostarle tutte insieme. Con Maiusc + clic aggiungi o togli idee.</p>
+    <div class="section"><h3>Colore</h3><div class="swatches" id="g-swatches" role="radiogroup" aria-label="Colore di tutte"></div></div>
+    <div class="section"><h3><label for="g-tag">Aggiungi un tag a tutte</label></h3><input id="g-tag" class="field" list="tag-list" maxlength="24" placeholder="Scrivi e premi Invio"></div>
+    <div class="section"><h3>Importanza</h3><div class="seg" id="g-imp" role="radiogroup" aria-label="Importanza di tutte"></div></div>
+    <div class="actions">
+      <button id="g-pin" class="act" type="button">Fissa tutte</button>
+      <button id="g-unpin" class="act" type="button">Sblocca tutte</button>
+      <button id="g-copy" class="act wide" type="button">Copia le idee selezionate</button>
+      <button id="g-del" class="act danger wide" type="button">Elimina</button>
+    </div>
+  </div>
+</aside>
+<div id="node-menu" class="popover glass" hidden role="menu" aria-label="Altre azioni sull’idea">
+  <button id="b-root" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"/></svg><span>Rendi idea centrale</span></button>
+  <button id="b-img" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/></svg><span>Aggiungi immagine</span></button>
+  <button id="b-img-rm" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 9l6 6M15 9l-6 6"/></svg><span>Rimuovi immagine</span></button>
+  <button id="b-copy" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg><span>Copia ramo</span></button>
+  <button id="b-paste" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/></svg><span>Incolla qui</span></button>
+  <button id="b-tour" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 5v14l11-7z"/></svg><span>Aggiungi alla presentazione</span></button>
+  <hr>
+  <button id="b-del" class="danger" type="button" role="menuitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg><span>Elimina idea</span></button>
+</div>
+<input type="file" id="file-img" accept="image/*" hidden>
+<input type="file" id="file-import" accept=".opml,.mm,.xml,.json,.md,.markdown,.txt" hidden>
+<datalist id="tag-list"></datalist>
+
+<nav id="dock" class="dock" aria-label="Comandi">
+  <div class="bar glass">
+    <button id="d-add" class="dock-btn primary edit-only" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nuova idea</button>
+    <button id="d-fit" class="dock-btn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>Panoramica</button>
+    <button id="d-pres" class="dock-btn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5v14l11-7z"/></svg>Presenta</button>
+    <button id="d-more" class="dock-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="menu"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>Altro</button>
+  </div>
+</nav>
+
+<div id="menu" class="glass" hidden role="menu" aria-label="Altri comandi">
+  <button id="m-undo" class="mobile-only edit-only" type="button" role="menuitem" disabled>Annulla l’ultima modifica</button>
+  <button id="m-redo" class="mobile-only edit-only" type="button" role="menuitem" disabled>Ripristina la modifica annullata</button>
+  <button id="m-rot" type="button" role="menuitemcheckbox">Rotazione automatica <span class="state"></span></button>
+  <button id="m-dim" type="button" role="menuitemcheckbox">Vista 2D <span class="state"></span></button>
+  <button id="m-focus" type="button" role="menuitemcheckbox">Modalità focus <span class="state"></span></button>
+  <button id="m-multi" class="edit-only" type="button" role="menuitemcheckbox">Selezione multipla <span class="state"></span></button>
+  <button id="m-minimap" type="button" role="menuitemcheckbox">Minimappa <span class="state"></span></button>
+  <hr>
+  <button id="m-layout" type="button" role="menuitem">Disposizione <span class="state" id="m-layout-state"></span></button>
+  <button id="m-views" type="button" role="menuitem">Viste salvate</button>
+  <button id="m-paste" class="edit-only" type="button" role="menuitem">Incolla le idee copiate</button>
+  <button id="m-ai" class="ai-only edit-only" type="button" role="menuitem">Suggerisci collegamenti con Claude</button>
+  <hr>
+  <button id="m-png" type="button" role="menuitem">Salva istantanea PNG</button>
+  <button id="m-versions" class="edit-only" type="button" role="menuitem">Versioni</button>
+  <button id="m-data" type="button" role="menuitem">Importa ed esporta</button>
+  <button id="m-maps" class="edit-only" type="button" role="menuitem">Le mie mappe</button>
+  <button id="m-settings" type="button" role="menuitem">Aspetto</button>
+  <button id="m-keys" type="button" role="menuitem">Scorciatoie da tastiera</button>
+  <button id="m-vr" type="button" role="menuitem" hidden>Entra in realtà virtuale</button>
+  <button id="m-install" type="button" role="menuitem" hidden>Installa l’app sul dispositivo</button>
+</div>
+
+<div id="pres" hidden>
+  <div class="pres-card glass" aria-live="polite"><div class="pres-step" id="pres-step"></div><h2 id="pres-title"></h2><div id="pres-note" class="note-view"></div></div>
+  <nav class="dock" aria-label="Comandi della presentazione"><div class="bar glass">
+    <button id="p-prev" class="dock-btn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>Indietro</button>
+    <button id="p-auto" class="dock-btn" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Automatico</button>
+    <button id="p-next" class="dock-btn primary" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>Avanti</button>
+    <button id="p-exit" class="dock-btn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>Esci</button>
+  </div></nav>
+</div>
+
+<dialog id="dlg-data" class="glass" aria-labelledby="dd-title">
+  <h2 id="dd-title">Importa ed esporta</h2>
+  <div class="tabs" role="tablist">
+    <button id="tab-json" class="chip" type="button" role="tab">Mappa (JSON)</button>
+    <button id="tab-outline" class="chip" type="button" role="tab">Scaletta di testo</button>
+    <button id="tab-other" class="chip" type="button" role="tab">Altri formati</button>
+  </div>
+  <div id="pane-json">
+    <p class="lead">Tutto il contenuto della mappa aperta: idee, note, tag, immagini, posizioni, collegamenti, viste salvate e disposizione. Le versioni non sono incluse.<span class="edit-only"> Incolla qui il testo di un’altra mappa e premi Sostituisci per caricarla al posto di questa.</span></p>
+    <textarea id="json-text" spellcheck="false" aria-label="Testo JSON della mappa"></textarea>
+    <div class="dlg-actions">
+      <button id="json-copy" class="act primary" type="button">Copia</button>
+      <button id="json-dl" class="act" type="button">Scarica JSON</button>
+      <button id="json-load" class="act edit-only" type="button">Sostituisci la mappa</button>
+      <button id="json-reset" class="act danger edit-only" type="button">Ripristina esempio</button>
+    </div>
+  </div>
+  <div id="pane-outline" hidden>
+    <p class="lead">La mappa come elenco indentato in Markdown, con i tag scritti come #tag.<span class="edit-only"> Puoi incollare una scaletta tua (rientri o trattini) e trasformarla in una nuova mappa.</span> I collegamenti trasversali non entrano nella scaletta.</p>
+    <textarea id="outline-text" spellcheck="false" aria-label="Scaletta di testo"></textarea>
+    <div class="dlg-actions">
+      <button id="outline-copy" class="act primary" type="button">Copia</button>
+      <button id="outline-dl" class="act" type="button">Scarica Markdown</button>
+      <button id="outline-new" class="act edit-only" type="button">Crea una nuova mappa da questo testo</button>
+    </div>
+  </div>
+  <div id="pane-other" hidden>
+    <p class="lead edit-only">Importa una mappa da un file OPML (Workflowy, Dynalist, molte app di scalette), FreeMind o Freeplane (.mm), JSON di Sinapsi o Markdown. Diventa una nuova mappa, quella aperta non cambia.</p>
+    <div class="dlg-actions edit-only" style="margin-top:0"><button id="import-file" class="act primary" type="button">Importa da file…</button></div>
+    <p class="lead" style="margin-top:18px">Il visualizzatore è un singolo file HTML con questa mappa dentro, in sola lettura: si apre in qualsiasi browser, si esplora, si cerca e si presenta, ma non si modifica.</p>
+    <div class="dlg-actions" style="margin-top:0">
+      <button id="dl-viewer" class="act edit-only" type="button">Scarica il visualizzatore HTML</button>
+      <button id="dl-opml" class="act" type="button">Scarica OPML</button>
+    </div>
+  </div>
+  <div class="dlg-actions"><span class="spacer"></span><button class="act dlg-close" type="button">Chiudi</button></div>
+  <p class="status" id="data-status" role="status"></p>
+</dialog>
+
+<dialog id="dlg-maps" class="glass" aria-labelledby="dm-title">
+  <h2 id="dm-title">Le mie mappe</h2>
+  <p class="lead">Ogni mappa è salvata in questo browser e, se hai fatto l’accesso, nel file sinapsi.db del tuo Google Drive. Tocca un nome per rinominarla.</p>
+  <ul class="list" id="maps-list"></ul>
+  <div class="dlg-actions"><button id="map-new" class="act primary" type="button">Nuova mappa vuota</button><span class="spacer"></span><button class="act dlg-close" type="button">Chiudi</button></div>
+  <p class="status" id="maps-status" role="status"></p>
+</dialog>
+
+<dialog id="dlg-versions" class="glass" aria-labelledby="dv-title">
+  <h2 id="dv-title">Versioni</h2>
+  <p class="lead">Un’istantanea con nome della mappa aperta, da confrontare o ripristinare. Il ripristino si può annullare. Al massimo 20 versioni per mappa.</p>
+  <div class="inline-form"><input id="v-name" class="field" maxlength="60" aria-label="Nome della versione"><button id="v-save" class="act primary" type="button">Salva versione</button></div>
+  <ul class="list" id="versions-list"></ul>
+  <div class="dlg-actions"><span class="spacer"></span><button class="act dlg-close" type="button">Chiudi</button></div>
+  <p class="status" id="versions-status" role="status"></p>
+</dialog>
+
+<dialog id="dlg-views" class="glass" aria-labelledby="dw-title">
+  <h2 id="dw-title">Viste salvate</h2>
+  <p class="lead">Memorizza l’inquadratura attuale e tornaci con un tocco. Le prime nove si richiamano anche con <kbd>Alt</kbd> + <kbd>1</kbd>…<kbd>9</kbd>.</p>
+  <div class="inline-form"><input id="w-name" class="field" maxlength="40" aria-label="Nome della vista"><button id="w-save" class="act primary" type="button">Salva la vista attuale</button></div>
+  <ul class="list" id="views-list"></ul>
+  <div class="dlg-actions"><span class="spacer"></span><button class="act dlg-close" type="button">Chiudi</button></div>
+</dialog>
+
+<dialog id="dlg-layout" class="glass" aria-labelledby="dl-title">
+  <h2 id="dl-title">Disposizione</h2>
+  <div id="layout-opts" role="radiogroup" aria-labelledby="dl-title"></div>
+  <div class="dlg-actions"><span class="spacer"></span><button class="act dlg-close" type="button">Chiudi</button></div>
+</dialog>
+
+<dialog id="dlg-ai" class="glass" aria-labelledby="da-title">
+  <h2 id="da-title">Collegamenti suggeriti da Claude</h2>
+  <p class="lead">Claude legge titoli, tag e inizio delle note e propone collegamenti tra idee lontane. Scegli quali creare.</p>
+  <div id="ai-links" class="ai-box"></div>
+  <div class="dlg-actions"><button id="ai-links-stop" class="act" type="button" hidden>Interrompi</button><span class="spacer"></span><button class="act dlg-close" type="button">Chiudi</button></div>
+</dialog>
+
+<dialog id="dlg-keys" class="glass" aria-labelledby="dk-title">
+  <h2 id="dk-title">Scorciatoie da tastiera</h2>
+  <dl class="keys">
+    <dt><kbd>Tab</kbd></dt><dd>Nuova idea figlia di quella selezionata</dd>
+    <dt><kbd>Invio</kbd></dt><dd>Nuova idea sorella (stesso ramo)</dd>
+    <dt>Una lettera</dt><dd>Inizia a scrivere il titolo dell’idea selezionata</dd>
+    <dt><kbd>F2</kbd></dt><dd>Modifica il titolo</dd>
+    <dt><kbd>Tab</kbd> mentre scrivi</dt><dd>Conferma e crea subito una figlia</dd>
+    <dt><kbd>Ctrl</kbd> + <kbd>Invio</kbd> mentre scrivi</dt><dd>Conferma e crea una sorella</dd>
+    <dt><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></dt><dd>Passa all’idea collegata in quella direzione</dd>
+    <dt><kbd>Canc</kbd></dt><dd>Elimina le idee selezionate (si può annullare)</dd>
+    <dt><kbd>Ctrl</kbd> + <kbd>C</kbd> / <kbd>V</kbd></dt><dd>Copia il ramo o le idee selezionate, incolla sotto l’idea selezionata</dd>
+    <dt><kbd>Ctrl</kbd> + <kbd>A</kbd></dt><dd>Seleziona tutte le idee visibili</dd>
+    <dt><kbd>Maiusc</kbd> + clic</dt><dd>Aggiunge o toglie un’idea dalla selezione</dd>
+    <dt><kbd>Maiusc</kbd> + trascina</dt><dd>Seleziona con un riquadro</dd>
+    <dt><kbd>Alt</kbd> / <kbd>Maiusc</kbd> rilasciando</dt><dd>Trascinando un’idea sopra un’altra: Alt la collega, Maiusc la sposta sotto</dd>
+    <dt><kbd>Ctrl</kbd> + <kbd>Z</kbd> / <kbd>Y</kbd></dt><dd>Annulla e ripristina</dd>
+    <dt><kbd>Alt</kbd> + <kbd>1</kbd>…<kbd>9</kbd></dt><dd>Vai a una vista salvata</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Annulla l’operazione in corso o chiude la selezione</dd>
+    <dt><kbd>?</kbd></dt><dd>Mostra questo elenco</dd>
+  </dl>
+  <div class="dlg-actions"><span class="spacer"></span><button class="act dlg-close" type="button">Chiudi</button></div>
+</dialog>
+
+<dialog id="dlg-settings" class="glass" aria-labelledby="ds-title">
+  <h2 id="ds-title">Aspetto</h2>
+  <div class="setting"><label for="s-glow">Bagliore</label><output id="o-glow"></output><input id="s-glow" type="range" min="0" max="2" step="0.1"></div>
+  <div class="setting"><label for="s-pulses">Impulsi lungo i collegamenti</label><output id="o-pulses"></output><input id="s-pulses" type="range" min="0" max="2" step="0.1"></div>
+  <div class="setting"><label for="s-spin">Velocità di rotazione automatica</label><output id="o-spin"></output><input id="s-spin" type="range" min="0.2" max="3" step="0.1"></div>
+  <label class="check"><input id="s-labels" type="checkbox"><span>Mostra le etichette dei collegamenti</span></label>
+  <label class="check"><input id="s-const" type="checkbox"><span>Mostra i nomi dei rami da lontano</span></label>
+  <div class="setting"><label for="s-drop">Quando rilasci un’idea sopra un’altra</label><span></span><select id="s-drop" class="field" style="grid-column:1 / -1"><option value="ask">Chiedi ogni volta</option><option value="move">Spostala sotto l’altra idea</option><option value="link">Collegala all’altra idea</option></select></div>
+  <label class="check"><input id="s-lite" type="checkbox"><span>Modalità leggera<small>Spegne bagliore, pulviscolo e dendriti e riduce la risoluzione. Utile su telefoni meno potenti.</small></span></label>
+  <div class="dlg-actions"><button id="s-reset" class="act" type="button">Valori predefiniti</button><span class="spacer"></span><button class="act dlg-close" type="button">Chiudi</button></div>
+</dialog>
+
+<div id="acct-menu" class="popover glass" hidden role="menu" aria-label="Account e sincronizzazione"></div>
+<div id="syncbar" class="bar-note glass" hidden><span>Google Drive va ricollegato per salvare le modifiche.</span><button id="sync-reconnect" class="act small primary" type="button">Ricollega</button></div>
+<div id="splash" class="overlay" hidden><div><div class="orb" aria-hidden="true"></div><p>Avvio di Sinapsi…</p></div></div>
+<div id="auth-screen" class="overlay" hidden role="dialog" aria-modal="true" aria-labelledby="auth-title">
+  <div class="auth-card glass">
+    <div class="orb" aria-hidden="true"></div>
+    <h1 id="auth-title">Sinapsi</h1>
+    <p>Accedi con Google per salvare le tue mappe nel tuo Google Drive e ritrovarle su ogni dispositivo.</p>
+    <button id="auth-google" class="act primary" type="button"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg><span>Accedi con Google</span></button>
+    <button id="auth-local" class="act" type="button">Continua senza account</button>
+    <p class="small-print">Al primo accesso Sinapsi crea nel tuo Google Drive un file “sinapsi.db” con le tue mappe e a ogni accesso successivo lo rilegge. Non può vedere gli altri tuoi file.</p>
+    <p class="small-print" id="auth-status" role="status"></p>
+  </div>
+</div>
+<dialog id="dlg-install" class="glass" aria-labelledby="di-title">
+  <h2 id="di-title">Installa Sinapsi</h2>
+  <p class="lead">Su iPhone e iPad: apri questa pagina con Safari, tocca il pulsante Condividi (il quadrato con la freccia verso l’alto) e scegli “Aggiungi alla schermata Home”. Sinapsi si aprirà a tutto schermo come un’app.</p>
+  <p class="lead">Su Android e computer, con Chrome o Edge: usa la voce “Installa app” nel menu del browser.</p>
+  <div class="dlg-actions"><span class="spacer"></span><button class="act dlg-close" type="button">Chiudi</button></div>
+</dialog>
+<div id="fatal" hidden></div>
+
+<script src="three.min.js"></script>
+<script src="CopyShader.js"></script>
+<script src="LuminosityHighPassShader.js"></script>
+<script src="EffectComposer.js"></script>
+<script src="RenderPass.js"></script>
+<script src="ShaderPass.js"></script>
+<script src="UnrealBloomPass.js"></script>
+<script src="OrbitControls.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
