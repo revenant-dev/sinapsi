@@ -1941,7 +1941,7 @@ function renderLinksList(r){
       const inp=mk('input');inp.value=l.data.label||'';inp.placeholder='Etichetta';inp.maxLength=40;inp.setAttribute('aria-label','Etichetta del collegamento con '+other.data.label);
       let committed=false;
       inp.addEventListener('focus',()=>{committed=false;});
-      inp.addEventListener('input',()=>{if(!committed){commit();committed=true;}l.data.label=inp.value.trim();renderLinkLabel(l);save();});
+      inp.addEventListener('input',()=>{if(!committed){commit();committed=true;}l.data.label=inp.value.trim();touch();renderLinkLabel(l);save();});
       inp.addEventListener('keydown',e=>{if(e.key==='Enter')inp.blur();});
       const selT=mk('select');selT.setAttribute('aria-label','Tipo di collegamento');
       LINK_TYPES.forEach(([v,lab])=>{const o=mk('option',null,lab);o.value=v;if(l.data.type===v)o.selected=true;selT.appendChild(o);});
@@ -2223,7 +2223,7 @@ function saveNoteFromEditor(){
   const t=htmlToMd(noteEd);
   if(t===(r.data.note||'').trim())return;
   if(!noteCommitted){commit();noteCommitted=true;}
-  r.data.note=t;save();
+  r.data.note=t;touch();save();
 }
 function finishNoteEdit(){if(document.activeElement===noteEd)noteEd.blur();clearTimeout(noteTimer);}
 noteEd.addEventListener('focus',()=>{noteCommitted=false;try{document.execCommand('defaultParagraphSeparator',false,'p');}catch(e){}});
@@ -2400,7 +2400,7 @@ titleIn.addEventListener('focus',()=>{titleCommitted=false;});
 titleIn.addEventListener('input',()=>{
   const r=sel();if(!r||READONLY)return;
   if(!titleCommitted){commit();titleCommitted=true;}
-  r.data.label=titleIn.value.trim()||'Senza titolo';renderLabel(r);computeGroups();save();
+  r.data.label=titleIn.value.trim()||'Senza titolo';touch();renderLabel(r);computeGroups();save();
 });
 titleIn.addEventListener('keydown',e=>{
   if(READONLY)return;
@@ -3671,6 +3671,13 @@ function initSync(){
   else if(mode!=='local')showAuthScreen();
   renderAcct();
 }
+function flushEdits(){
+  if(READONLY)return;
+  if(typeof noteEd!=='undefined'&&document.activeElement===noteEd){clearTimeout(noteTimer);saveNoteFromEditor();}
+  saveNow();
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flushEdits();});
+addEventListener('pagehide',flushEdits);
 document.addEventListener('visibilitychange',()=>{if(!AUTH.user)return;if(document.visibilityState==='visible')syncNow('ritorno');else if(SYNC.dirty)syncNow('uscita dalla pagina');});
 addEventListener('online',()=>{if(AUTH.user)syncNow('connessione');});
 addEventListener('offline',()=>{if(AUTH.user)setSyncState('offline');});
