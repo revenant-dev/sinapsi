@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Sinapsi, mappa mentale 3D</title>
+<title>Sinapsi - Web App</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&display=swap" rel="stylesheet">
@@ -816,22 +816,38 @@ try{const c=localStorage.getItem(CLIPKEY);if(c&&!READONLY)clip=JSON.parse(c);}ca
 /* ================= Dati ================= */
 function blankNode(label,hue){return {id:newId(),label,note:'',hue:hue===undefined?null:hue,p:null,tags:[],img:null,pinned:false,collapsed:false,imp:3,due:null,created:Date.now()};}
 function sampleMap(){
-  const ns=[],ls=[];let i=0;const t0=Date.now()-40*DAY;
+  const ns=[],ls=[];let i=0;const t0=Date.now()-30*DAY;
   const iso=d=>new Date(Date.now()+d*DAY).toISOString().slice(0,10);
-  const add=(label,hue,parent,o)=>{o=o||{};const n={id:'n'+(++i),label,note:o.note||'',hue,p:null,tags:o.tags||[],img:null,pinned:false,collapsed:false,imp:o.imp||3,due:o.due||null,created:t0+i*DAY*1.5};ns.push(n);if(parent)ls.push({s:parent.id,t:n.id,label:o.ll||'',type:'normal'});return n;};
-  const root=add('La mia web app',null,null,{imp:5,note:'L’idea centrale della mappa.\n\n- Tocca un’idea per aprirla, tienila premuta per spostarla\n- Trascinala sopra un’altra per spostarla o collegarla\n- Premi **?** per le scorciatoie, **Tab** e **Invio** per scrivere in fretta\n\nLe note accettano *corsivo*, **grassetto**, `codice`, link come https://threejs.org e attività da spuntare.'});
+  const add=(label,hue,parent,o)=>{o=o||{};const n={id:'n'+(++i),label,note:o.note||'',hue,p:null,tags:o.tags||[],img:null,pinned:false,collapsed:false,imp:o.imp||3,due:o.due||null,created:t0+i*DAY};ns.push(n);if(parent)ls.push({s:parent.id,t:n.id,label:o.ll||'',type:'normal'});return n;};
+  const root=add('Viaggio in Sicilia',null,null,{imp:5,note:'Dieci giorni a giugno, in auto, da Palermo a Catania.\n\n- [x] Scegliere le date\n- [x] Prenotare il volo\n- [ ] Prenotare tutti gli alloggi\n- [ ] Noleggiare l’auto'});
   const tree=[
-    ['Funzionalità',188,{note:'Cosa deve saper fare l’app.\n\n- [x] Mappa navigabile\n- [x] Ricerca\n- [ ] Scorciatoie avanzate',imp:4},[['Mappa 3D navigabile',{tags:['fatto']}],['Ricerca delle idee',{tags:['fatto']}],['Note su ogni idea',{tags:['fatto']}],['Collegamenti liberi',{tags:['fatto']}]]],
-    ['Tecnologie',258,{note:'Gli strumenti con cui è costruita.'},[['Three.js',{}],['WebGL',{}],['Un solo file HTML',{imp:4}],['Salvataggio nel browser',{}]]],
-    ['Aspetto',318,{note:'Come deve apparire e muoversi.'},[['Effetto sinapsi',{imp:5}],['Impulsi luminosi',{}],['Bagliore dei nodi',{}],['Volo della camera',{}]]],
-    ['Dati',36,{note:'Dove vivono le idee.\n\n- [x] Esportazione JSON\n- [ ] Sincronizzazione',due:iso(2)},[['Esporta in JSON',{tags:['fatto']}],['Importa da JSON',{tags:['fatto']}],['Sincronizzazione Firebase',{tags:['da fare','priorità'],due:iso(-3),imp:4,note:'- [ ] Login con Google\n- [ ] Salvataggio su Firestore\n- [ ] Aggiornamento in tempo reale'}]]],
-    ['Idee future',150,{note:'Possibili sviluppi.'},[['Dettatura vocale',{tags:['da fare']}],['Condivisione con altri',{tags:['da fare','priorità'],due:iso(20)}],['Modalità presentazione',{tags:['fatto']}],['Immagini nei nodi',{tags:['fatto']}]]]
+    ['Itinerario',188,{note:'Da ovest a est, con rientro da Catania.',imp:4},[
+      ['Palermo',{tags:['città'],note:'- Mercato di Ballarò\n- Cattedrale\n- Teatro Massimo'}],
+      ['Cefalù',{tags:['mare'],note:'Una mezza giornata: il duomo e la spiaggia.'}],
+      ['Agrigento',{tags:['storia'],note:'Valle dei Templi: meglio verso il tramonto.'}],
+      ['Siracusa',{tags:['storia','mare'],note:'Ortigia e il teatro greco.'}],
+      ['Taormina',{tags:['città'],note:'Il teatro antico con vista sull’Etna.'}],
+      ['Etna',{tags:['natura'],imp:4,due:iso(20),note:'- [ ] Prenotare l’escursione guidata ai crateri\n- [ ] Controllare il meteo il giorno prima'}]]],
+    ['Trasporti',258,{note:'Come muoversi.'},[
+      ['Volo',{tags:['prenotato'],note:'Andata su Palermo, ritorno da Catania.'}],
+      ['Auto a noleggio',{tags:['da fare'],imp:4,due:iso(-2),note:'- [ ] Confrontare almeno tre preventivi\n- [ ] Scegliere l’assicurazione completa'}],
+      ['Parcheggi',{note:'Nei centri storici ci sono le ZTL: meglio lasciare l’auto fuori.'}]]],
+    ['Alloggi',318,{note:'Una base per zona.'},[
+      ['B&B a Palermo',{tags:['prenotato']}],
+      ['Agriturismo vicino ad Agrigento',{tags:['da fare'],due:iso(5)}],
+      ['Casa a Ortigia',{tags:['da fare']}]]],
+    ['Cucina',36,{note:'Da assaggiare almeno una volta.'},[
+      ['Arancine',{}],['Pasta alla Norma',{}],['Cannoli',{}],
+      ['Granita e brioche',{note:'A colazione, come si fa a Catania.'}]]],
+    ['Da portare',150,{note:'Lista per la valigia.'},[
+      ['Documenti',{imp:4,note:'- [x] Carta d’identità\n- [ ] Patente\n- [ ] Tessera sanitaria'}],
+      ['Crema solare',{}],['Scarpe da trekking',{}]]]
   ];
   const by={};
   for(const [b,h,o,kids] of tree){const bn=add(b,h,root,o);for(const [k,ko] of kids)by[k]=add(k,h,bn,ko);}
-  [['Effetto sinapsi','WebGL','usa','arrow'],['Salvataggio nel browser','Esporta in JSON','alimenta','normal'],['Sincronizzazione Firebase','Condivisione con altri','abilita','arrow'],['Volo della camera','Mappa 3D navigabile','rende viva','maybe'],['Three.js','Bagliore dei nodi','produce','strong']]
+  [['Etna','Scarpe da trekking','richiede','arrow'],['Auto a noleggio','Agrigento','serve per','arrow'],['B&B a Palermo','Palermo','si trova a','strong'],['Casa a Ortigia','Siracusa','si trova a','strong'],['Cannoli','Palermo','tipici di','maybe'],['Granita e brioche','Taormina','da provare a','normal']]
     .forEach(([a,b,l,t])=>ls.push({s:by[a].id,t:by[b].id,label:l,type:t}));
-  return {id:null,name:'La mia web app',nodes:ns,links:ls,tour:[],layout:'force',views:[],versions:[],created:Date.now()};
+  return {id:null,name:'Viaggio in Sicilia',nodes:ns,links:ls,tour:[],layout:'sphere',views:[],versions:[],created:Date.now()};
 }
 function sanitizeMap(obj){
   if(!obj||!Array.isArray(obj.nodes))throw new Error('manca l’elenco “nodes”.');
@@ -861,7 +877,7 @@ function sanitizeMap(obj){
     .map(v=>({id:String(v.id||newId('v')),name:String(v.name||'Vista').slice(0,40),t:v.t,c:v.c})).slice(0,30);
   const versions=(Array.isArray(obj.versions)?obj.versions:[]).filter(v=>v&&typeof v.snap==='string').map(v=>({id:String(v.id||newId('s')),name:String(v.name||'Versione').slice(0,60),date:+v.date||Date.now(),count:+v.count||0,snap:v.snap})).slice(-20);
   return {id:typeof obj.id==='string'?obj.id:null,name:typeof obj.name==='string'&&obj.name.trim()?obj.name.trim().slice(0,60):'Mappa senza nome',nodes:ns,links:ls,tour,
-    layout:LAYOUTS.some(l=>l[0]===obj.layout)?obj.layout:'force',view2d:!!obj.view2d,views,versions,created:Number(obj.created)||Date.now(),updated:Number(obj.updated)||0};
+    layout:LAYOUTS.some(l=>l[0]===obj.layout)?obj.layout:'sphere',view2d:!!obj.view2d,views,versions,created:Number(obj.created)||Date.now(),updated:Number(obj.updated)||0};
 }
 function loadStore(){
   if(EMBED&&EMBED.map){
@@ -1470,7 +1486,7 @@ function build(opts){
 function updateBrand(){
   $('#map-name').textContent=map.name;
   $('#count').textContent=plural(map.nodes.length,'idea','idee')+(READONLY?', sola lettura':'');
-  document.title=map.name+', Sinapsi';
+  document.title='Sinapsi - Web App';
 }
 
 /* ================= Camera ================= */
@@ -2772,7 +2788,7 @@ $('#json-load').addEventListener('click',()=>{
 $('#json-reset').addEventListener('click',e=>{
   const b=e.currentTarget;
   if(!resetArmed){resetArmed=true;b.textContent='Tocca di nuovo: la mappa aperta verrà sostituita';b.classList.add('armed');return;}
-  commit();const s=sampleMap();Object.assign(map,{nodes:s.nodes,links:s.links,tour:[],layout:'force'});
+  commit();const s=sampleMap();Object.assign(map,{nodes:s.nodes,links:s.links,tour:[],layout:s.layout,name:s.name});
   activeTag=null;build();save();dlgData.close();toast('Mappa di esempio ripristinata.');
 });
 function treeOf(){
@@ -2805,7 +2821,7 @@ function itemsToMap(title,tops,cross){
   ns.forEach((n,i)=>{n.created=Date.now()-(ns.length-i)*60000;});
   (cross||[]).forEach(([a,b])=>{const s=idOf.get(a),t=idOf.get(b);if(s&&t&&s!==t&&!ls.some(l=>(l.s===s&&l.t===t)||(l.s===t&&l.t===s)))ls.push({s,t,label:'',type:'arrow'});});
   root.collapsed=false;
-  return {id:null,name:(title||root.label).slice(0,60),nodes:ns,links:ls,tour:[],layout:'force',views:[],versions:[],created:Date.now()};
+  return {id:null,name:(title||root.label).slice(0,60),nodes:ns,links:ls,tour:[],layout:'sphere',views:[],versions:[],created:Date.now()};
 }
 function fromOutline(text){
   const raw=text.replace(/\r/g,'').split('\n');let title=null,base=0;const items=[];
@@ -2905,7 +2921,7 @@ function renderMaps(){
 }
 $('#map-new').addEventListener('click',()=>{
   const n=blankNode('Idea centrale',null);n.p=[0,0,0];n.imp=5;
-  const m={id:newId('m'),name:'Nuova mappa',nodes:[n],links:[],tour:[],layout:'force',views:[],versions:[],created:Date.now()};
+  const m={id:newId('m'),name:'Nuova mappa',nodes:[n],links:[],tour:[],layout:'sphere',views:[],versions:[],created:Date.now()};
   m.updated=Date.now();store.maps[m.id]=m;markDirty();dlgMaps.close();switchMap(m.id);selectNode(n.id,{fly:false});focusTitle();
 });
 function switchMap(id){
