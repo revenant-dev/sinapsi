@@ -24,7 +24,7 @@ const SOURCE_CLONE=(function(){
     const c=document.documentElement.cloneNode(true);
     c.querySelectorAll('script').forEach(s=>{
       const src=s.getAttribute('src')||'';
-      if(!/^[\w.-]+\.js$/.test(src)||src==='config.js')s.remove();
+      if(!/^(lib\/[\w.-]+\.js|app\.js)$/.test(src))s.remove();
     });
     return c;
   }catch(e){return null;}
@@ -2694,7 +2694,7 @@ function onVREnd(){
 const DRIVE_SCOPE='https://www.googleapis.com/auth/drive.file';
 const GIS_SCOPES='openid email profile '+DRIVE_SCOPE;
 const GIS_URL='https://accounts.google.com/gsi/client';
-const SQLJS_URL='';
+const SQLJS_URL='lib/';
 const DRIVE_API='https://www.googleapis.com/drive/v3/files',DRIVE_UP='https://www.googleapis.com/upload/drive/v3/files';
 const DB_MIME='application/x-sqlite3';
 const SYNC_ENABLED=!READONLY&&!hasClaude&&/\.apps\.googleusercontent\.com$/.test(GOOGLE_CLIENT_ID)&&(location.protocol==='https:'||/^(localhost|127\.0\.0\.1)$/.test(location.hostname));
