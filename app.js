@@ -47,7 +47,8 @@ const LAYOUTS=[
   ['tags','Per tag','Le idee si raccolgono in gruppi secondo il loro tag principale.'],
   ['timeline','Cronologia','Le idee in fila nel tempo, per scadenza o data di creazione, una corsia per ramo.']
 ];
-const DEFAULT_SETTINGS={glow:1.1,pulses:1,spin:1,lite:false,linkLabels:true,constellations:true,minimap:innerWidth>720,dropAction:'ask',focus:true};
+const DEFAULT_SETTINGS={glow:1.1,pulses:1,spin:1,lite:false,linkLabels:true,constellations:true,minimap:innerWidth>720,dropAction:'ask',focus:true,fog:.5};
+let fogK=1;
 const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const COARSE=matchMedia('(pointer: coarse)').matches;
 const MAX_DPR=COARSE?1.75:2;
@@ -1004,9 +1005,9 @@ function updateLabels(){
     r.onscreen=_v.z<1&&_v.x>-1.15&&_v.x<1.15&&_v.y>-1.15&&_v.y<1.15;
     if(!r.onscreen)continue;
     const isSel=r.id===selected||multi.has(r.id);
-    let o=clamp(1.55-d/480,0,1);
+    let o=clamp(1.55-d/(480*fogK),0,1);
     if(r.isRoot)o=Math.max(o,.7);
-    if(r.data.imp>=5)o=Math.max(o,clamp(1.9-d/600,0,.9));
+    if(r.data.imp>=5)o=Math.max(o,clamp(1.9-d/(600*fogK),0,.9));
     if(isSel)o=1;
     if(r.L<1&&!isSel)o*=r.L*.9;
     if(o>.05)cand.push([r,o,isSel]);
@@ -1026,7 +1027,7 @@ function updateLabels(){
     let show=l.visible&&l.k>.08;
     if(show){
       bez(l,.5,_p);project(_p);const d=camera.position.distanceTo(_p);
-      const o=clamp(1.3-d/380,0,1)*Math.min(1,l.k*1.4);
+      const o=clamp(1.3-d/(380*fogK),0,1)*Math.min(1,l.k*1.4);
       show=_v.z<1&&o>.05&&Math.abs(_v.x)<1.1&&Math.abs(_v.y)<1.1;
       if(show){
         const x=(_v.x*.5+.5)*w,y=(-_v.y*.5+.5)*h,s=clamp(180/d,.6,1.2);
@@ -1101,9 +1102,20 @@ mm.addEventListener('click',e=>{
 });
 
 /* ================= Ciclo ================= */
+/* Nebbia proporzionata alla distanza della camera: le idee inquadrate restano nitide
+   anche da lontano, solo quelle molto più in profondità si attenuano. */
+function updateFog(){
+  const cd=Math.max(1,camera.position.distanceTo(controls.target));
+  fogK=Math.max(1,cd/340);
+  const f=+store.settings.fog;
+  const dens=.0017*(Number.isFinite(f)?f:.5)/fogK;
+  scene.fog.density=dens;
+  haloMat.uniforms.uFog.value=ringMat.uniforms.uFog.value=fiberMat.uniforms.uFog.value=coreMat.uniforms.uFog.value=dens;
+}
 function renderFrame(){
   const s=store.settings;
   if(renderer.xr.isPresenting){renderer.render(scene,camera);return;}
+  updateFog();
   if(composer&&!s.lite&&s.glow>0)composer.render();else renderer.render(scene,camera);
 }
 let last=performance.now(),time=0;
@@ -2592,18 +2604,19 @@ const dlgSet=$('#dlg-settings');
 function fmt(v){return (+v).toFixed(1).replace('.',',')+'×';}
 function openSettings(){
   const s=store.settings;
-  $('#s-glow').value=s.glow;$('#s-pulses').value=s.pulses;$('#s-spin').value=s.spin;
+  $('#s-glow').value=s.glow;$('#s-fog').value=s.fog!=null?s.fog:.5;$('#s-pulses').value=s.pulses;$('#s-spin').value=s.spin;
   $('#s-labels').checked=s.linkLabels;$('#s-lite').checked=s.lite;$('#s-const').checked=s.constellations;$('#s-drop').value=s.dropAction||'ask';
   syncOutputs();dlgSet.showModal();
 }
-function syncOutputs(){$('#o-glow').textContent=fmt($('#s-glow').value);$('#o-pulses').textContent=fmt($('#s-pulses').value);$('#o-spin').textContent=fmt($('#s-spin').value);}
+function fogName(v){v=+v;return v===0?'nessuna':v<=.35?'leggerissima':v<=.65?'leggera':v<=1.05?'normale':'fitta';}
+function syncOutputs(){$('#o-fog').textContent=fogName($('#s-fog').value);$('#o-glow').textContent=fmt($('#s-glow').value);$('#o-pulses').textContent=fmt($('#s-pulses').value);$('#o-spin').textContent=fmt($('#s-spin').value);}
 function readSettings(){
   const s=store.settings;
-  s.glow=+$('#s-glow').value;s.pulses=+$('#s-pulses').value;s.spin=+$('#s-spin').value;
+  s.glow=+$('#s-glow').value;s.fog=+$('#s-fog').value;s.pulses=+$('#s-pulses').value;s.spin=+$('#s-spin').value;
   s.linkLabels=$('#s-labels').checked;s.lite=$('#s-lite').checked;s.constellations=$('#s-const').checked;s.dropAction=$('#s-drop').value;
   syncOutputs();applySettings();save();
 }
-['#s-glow','#s-pulses','#s-spin'].forEach(id=>$(id).addEventListener('input',readSettings));
+['#s-glow','#s-fog','#s-pulses','#s-spin'].forEach(id=>$(id).addEventListener('input',readSettings));
 ['#s-labels','#s-lite','#s-const','#s-drop'].forEach(id=>$(id).addEventListener('change',readSettings));
 $('#s-reset').addEventListener('click',()=>{const mmOn=store.settings.minimap;store.settings=Object.assign({},DEFAULT_SETTINGS,{minimap:mmOn});openSettings();applySettings();save();});
 function applySettings(){
