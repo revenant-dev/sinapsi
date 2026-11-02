@@ -1342,7 +1342,7 @@ function afterTagChange(r){
   if(activeTag&&!allTags().some(([t])=>t===activeTag))activeTag=null;
   if(r)renderTags(r);renderFilters();
   if(map.layout==='tags'){computeLayout();computeGroups();}
-  applyStyles();save();
+  applyStyles();save();scheduleSide();
 }
 function allTags(){const c=new Map();for(const n of map.nodes)for(const t of n.tags)c.set(t,(c.get(t)||0)+1);return [...c].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'it'));}
 function renderLinksList(r){
@@ -1402,7 +1402,7 @@ function afterMulti(){
     $('#g-title').textContent=plural(multi.size,'idea selezionata','idee selezionate');
     $('#g-del').textContent='Elimina '+plural(multi.size,'idea','idee');$('#g-del').classList.remove('armed');gDelArmed=false;
     gImpBtns.forEach(b=>b.setAttribute('aria-checked','false'));gSwatchBtns.forEach(b=>b.setAttribute('aria-checked','false'));
-    fillTagList();openPanel('group');
+    fillTagList();renderGroupTags();openPanel('group');
   }else if(multi.size===1){const only=[...multi][0];multi.clear();selectNode(only,{fly:false});return;}
   else{closePanel();}
   applyStyles();scheduleSide();
@@ -1423,7 +1423,7 @@ function selectAllVisible(){
 function groupApply(fn,msg){
   if(!multi.size)return;commit();
   for(const id of multi){const r=nodes.get(id);if(r)fn(r);}
-  refreshTopology();renderFilters();save();if(msg)toast(msg);
+  refreshTopology();renderFilters();save();scheduleSide();if(msg)toast(msg);
 }
 let gDelArmed=false;
 $('#g-del').addEventListener('click',e=>{
@@ -1434,12 +1434,33 @@ $('#g-close').addEventListener('click',()=>clearMulti());
 $('#g-pin').addEventListener('click',()=>groupApply(r=>{r.data.pinned=true;},'Idee fissate in posizione.'));
 $('#g-unpin').addEventListener('click',()=>{groupApply(r=>{r.data.pinned=false;},'Idee sbloccate.');reheat(.3);});
 $('#g-copy').addEventListener('click',()=>copySelection());
-$('#g-tag').addEventListener('keydown',e=>{
-  if(e.key!=='Enter')return;e.preventDefault();
-  const t=normTag(e.target.value);if(!t)return;e.target.value='';
-  groupApply(r=>{if(!r.data.tags.some(x=>x.toLowerCase()===t.toLowerCase())&&r.data.tags.length<12)r.data.tags.push(t);},'Tag “'+t+'” aggiunto.');
-  afterTagChange(null);
-});
+let gTagAt=0;
+function addGroupTag(){
+  const inp=$('#g-tag'),t=normTag(inp.value);if(!t)return false;
+  inp.value='';gTagAt=performance.now();
+  let added=0,full=0;
+  groupApply(r=>{if(r.data.tags.some(x=>x.toLowerCase()===t.toLowerCase()))return;if(r.data.tags.length>=12){full++;return;}r.data.tags.push(t);added++;});
+  afterTagChange(null);renderGroupTags();fillTagList();
+  toast(added?'Tag “'+t+'” aggiunto a '+plural(added,'idea','idee')+(full?' ('+full+' ne avevano già 12)':'')+'.':full?'Queste idee hanno già 12 tag.':'Tutte le idee selezionate hanno già il tag “'+t+'”.');
+  return true;
+}
+function renderGroupTags(){
+  const box=$('#g-tags');if(!box)return;box.textContent='';
+  const c=new Map();for(const id of multi){const r=nodes.get(id);if(r)for(const t of r.data.tags)c.set(t,(c.get(t)||0)+1);}
+  [...c].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'it')).forEach(([t,n])=>{
+    const chip=mk('span','tag',t);if(n<multi.size)chip.appendChild(mk('small',null,n+'/'+multi.size));
+    const x=mk('button',null,'×');x.type='button';x.setAttribute('aria-label','Togli il tag '+t+' da tutte');x.title='Togli da tutte';
+    x.addEventListener('click',()=>{groupApply(r=>{r.data.tags=r.data.tags.filter(y=>y!==t);});afterTagChange(null);renderGroupTags();fillTagList();
+      toast('Tag “'+t+'” tolto dalle idee selezionate.',0,{label:'Annulla',fn:()=>undo()});});
+    chip.appendChild(x);box.appendChild(chip);
+  });
+}
+$('#g-tag').addEventListener('keydown',e=>{if(e.key==='Enter'||e.keyCode===13){e.preventDefault();addGroupTag();}});
+/* Sul telefono il tasto Invio della tastiera non sempre arriva come “Enter”, e scegliere un
+   suggerimento non lo preme affatto: il tag si aggiunge anche scegliendolo dall’elenco o con il pulsante. */
+$('#g-tag').addEventListener('input',e=>{if(e.inputType==='insertReplacementText'||e.inputType===undefined&&allTags().some(([t])=>t===e.target.value))addGroupTag();});
+$('#g-tag').addEventListener('change',e=>{const v=e.target.value.trim();if(v&&allTags().some(([t])=>t.toLowerCase()===v.toLowerCase().replace(/^#/,'')))addGroupTag();});
+$('#g-tag-add').addEventListener('click',()=>{if(!addGroupTag()&&performance.now()-gTagAt>600){$('#g-tag').focus();}});
 $('#m-multi').addEventListener('click',()=>{setMultiMode(!multiMode);openMenu(false);});
 $('#mode-done').addEventListener('click',()=>setMultiMode(false));
 function setMultiMode(v){multiMode=v;$('#modebar').hidden=!v;updateBars();syncMenu();if(v){deselect();toast('Tocca le idee da selezionare o trascina un riquadro sullo sfondo.',4000);}}
@@ -3140,7 +3161,7 @@ function scheduleSide(){if(side.hidden||sideRaf)return;sideRaf=requestAnimationF
 function renderSide(){
   if(side.hidden)return;
   const ae=document.activeElement;if(ae&&ae.classList&&ae.classList.contains('orename'))return;
-  if(sideTab==='list')renderOutline();else renderAgenda();
+  if(sideTab==='list')renderOutline();else if(sideTab==='tags')renderTagMan();else renderAgenda();
 }
 function nodeBadge(r){
   const di=dueInfo(r);
@@ -3262,6 +3283,121 @@ function renderAgenda(){
   }
   if(!any)box.appendChild(mk('p','agenda-empty',READONLY?'In questa mappa non ci sono scadenze né attività aperte.':'Nessuna scadenza e nessuna attività da fare. Aggiungi una scadenza dalla scheda Dettagli di un’idea, oppure scrivi un’attività da spuntare in una nota.'));
 }
+/* ---- Gestione dei tag ---- */
+const tagOpen=new Set();let tagRenaming=null;
+const ICON_PEN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const ICON_BIN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
+function nodesWithTag(t){return nodeList.filter(r=>r.data.tags.includes(t));}
+function renderTagMan(){
+  const box=$('#tagman');box.textContent='';
+  const tags=allTags();
+  for(const t of [...tagOpen])if(!tags.some(([x])=>x===t))tagOpen.delete(t);
+  if(!tags.length){box.appendChild(mk('p','agenda-empty',READONLY?'In questa mappa non ci sono tag.':'Non ci sono ancora tag. Aggiungili dalla scheda Dettagli di un’idea, oppure a più idee insieme con la selezione multipla.'));return;}
+  for(const [t,c] of tags){
+    const open=tagOpen.has(t),item=mk('div','titem'+(open?' open':''));
+    const row=mk('div','trow');
+    if(tagRenaming===t){
+      const inp=mk('input','field trename orename');inp.value=t;inp.maxLength=24;inp.setAttribute('aria-label','Nuovo nome del tag '+t);inp.setAttribute('enterkeyhint','done');
+      let done=false;const finish=ok=>{if(done)return;done=true;tagRenaming=null;if(ok)renameTag(t,inp.value);else renderTagMan();};
+      inp.addEventListener('keydown',e=>{if(e.key==='Enter'||e.keyCode===13){e.preventDefault();finish(true);}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();finish(false);}});
+      inp.addEventListener('blur',()=>finish(true));
+      row.appendChild(inp);item.appendChild(row);box.appendChild(item);
+      requestAnimationFrame(()=>{inp.focus();inp.select();});
+      continue;
+    }
+    const nb=mk('button','tname'+(activeTag===t?' active':''));nb.type='button';nb.setAttribute('aria-expanded',String(open));
+    const tog=mk('span','otog');tog.innerHTML=CHEV;if(open)tog.style.transform='rotate(90deg)';
+    nb.append(tog,mk('span','tlab','#'+t),mk('small',null,plural(c,'idea','idee')));
+    nb.addEventListener('click',()=>{if(tagOpen.has(t))tagOpen.delete(t);else tagOpen.add(t);renderTagMan();});
+    row.appendChild(nb);
+    if(!READONLY){
+      const pen=mk('button','ticon');pen.type='button';pen.innerHTML=ICON_PEN;pen.title='Rinomina';pen.setAttribute('aria-label','Rinomina il tag '+t);
+      pen.addEventListener('click',()=>{tagRenaming=t;renderTagMan();});
+      const bin=mk('button','ticon danger');bin.type='button';bin.innerHTML=ICON_BIN;bin.title='Elimina';bin.setAttribute('aria-label','Elimina il tag '+t);
+      bin.addEventListener('click',()=>askDeleteTag(t));
+      row.append(pen,bin);
+    }
+    item.appendChild(row);
+    if(open){
+      const body=mk('div','tbody'),acts=mk('div','tacts');
+      const fb=mk('button','act small',activeTag===t?'Mostra tutte le idee':'Evidenzia sulla mappa');fb.type='button';
+      fb.addEventListener('click',()=>{
+        activeTag=activeTag===t?null:t;renderFilters();applyStyles();renderTagMan();
+        if(activeTag){const m=simList.filter(r=>r.data.tags.includes(t));if(m.length&&!selected)flyToFit(m);if(isNarrow())openSide(false);}
+      });
+      acts.appendChild(fb);
+      if(!READONLY){
+        const sb=mk('button','act small','Seleziona tutte');sb.type='button';
+        sb.addEventListener('click',()=>selectByTag(t));acts.appendChild(sb);
+      }
+      body.appendChild(acts);
+      for(const r of nodesWithTag(t).sort((a,b)=>a.data.label.localeCompare(b.data.label,'it'))){
+        const b=mk('button','aitem');b.type='button';
+        const dot=mk('span','odot');dot.style.setProperty('--c',cssColor(r.data.hue));
+        b.append(dot,mk('b',null,r.data.label),mk('span','when',''),mk('small',null,r.tParent?r.tParent.data.label:'Idea principale'));
+        b.addEventListener('click',()=>pickFromSide(r.id));
+        body.appendChild(b);
+      }
+      item.appendChild(body);
+    }
+    box.appendChild(item);
+  }
+}
+function selectByTag(t){
+  const list=nodesWithTag(t);if(!list.length)return;
+  if(list.some(r=>r.hidden))list.forEach(r=>{if(r.hidden)revealNode(r.id);});
+  if(list.length===1){pickFromSide(list[0].id);return;}
+  clearPath();selected=null;multi.clear();list.forEach(r=>multi.add(r.id));
+  afterMulti();flyToFit(list);
+  toast(plural(list.length,'idea selezionata','idee selezionate')+' con il tag “'+t+'”.');
+  if(isNarrow())openSide(false);
+}
+function renameTag(old,v){
+  const nw=(v||'').replace(/,/g,'').replace(/^#/,'').trim().slice(0,24);
+  if(!nw||nw===old){renderTagMan();return;}
+  const other=allTags().map(x=>x[0]).find(x=>x!==old&&x.toLowerCase()===nw.toLowerCase());
+  const target=other||nw;
+  commit();
+  for(const r of nodeList){
+    const i=r.data.tags.indexOf(old);if(i<0)continue;
+    if(r.data.tags.some((x,j)=>j!==i&&x===target))r.data.tags.splice(i,1);else r.data.tags[i]=target;
+  }
+  if(activeTag===old)activeTag=target;
+  if(tagOpen.delete(old))tagOpen.add(target);
+  afterTagChange(sel());if(multi.size>1)renderGroupTags();fillTagList();renderTagMan();
+  toast(other?'Il tag “'+old+'” è stato unito a “'+target+'”.':'Tag rinominato in “'+target+'”.',0,{label:'Annulla',fn:()=>undo()});
+}
+let tagToDelete=null;
+function askDeleteTag(t){
+  const list=nodesWithTag(t),n=list.length,root=nodes.get(rootId),hasRoot=list.includes(root);
+  tagToDelete=t;
+  $('#dt-title').textContent='Eliminare il tag “'+t+'”?';
+  $('#dt-lead').textContent=n===1?'Il tag è usato da un’idea: “'+list[0].data.label+'”. Cosa vuoi fare?':'Il tag è usato da '+n+' idee. Cosa vuoi fare?';
+  $('#dt-remove').innerHTML='';$('#dt-remove').append(document.createTextNode(n===1?'Togli solo il tag dall’idea':'Togli solo il tag dalle '+n+' idee'),mk('small',null,'Le idee restano nella mappa, senza questo tag.'));
+  const del=n-(hasRoot?1:0);
+  $('#dt-delete').hidden=del<1;$('#dt-delete').innerHTML='';
+  if(del>=1)$('#dt-delete').append(document.createTextNode(del===1?'Elimina l’idea con questo tag':'Elimina le '+del+' idee con questo tag'),
+    mk('small',null,(hasRoot?'L’idea centrale resta, senza il tag. ':'')+'Le idee collegate sotto di loro che non hanno il tag restano nella mappa. Puoi sempre annullare.'));
+  $('#dlg-tagdel').showModal();
+}
+$('#dt-remove').addEventListener('click',()=>{
+  const t=tagToDelete;$('#dlg-tagdel').close();if(!t)return;
+  const n=nodesWithTag(t).length;commit();
+  for(const r of nodeList)r.data.tags=r.data.tags.filter(x=>x!==t);
+  if(activeTag===t)activeTag=null;tagOpen.delete(t);
+  afterTagChange(sel());if(multi.size>1)renderGroupTags();fillTagList();renderTagMan();
+  toast('Tag “'+t+'” tolto da '+plural(n,'idea','idee')+'.',0,{label:'Annulla',fn:()=>undo()});
+});
+$('#dt-delete').addEventListener('click',()=>{
+  const t=tagToDelete;$('#dlg-tagdel').close();if(!t)return;
+  const root=nodes.get(rootId),ids=nodesWithTag(t).filter(r=>r!==root).map(r=>r.id);
+  if(!ids.length)return;
+  if(activeTag===t)activeTag=null;tagOpen.delete(t);
+  deleteNodes(ids);
+  /* stesso passo di annullamento: deleteNodes ha già salvato lo stato precedente */
+  const rt=nodes.get(rootId);if(rt&&rt.data.tags.includes(t)){rt.data.tags=rt.data.tags.filter(x=>x!==t);afterTagChange(null);}
+  renderFilters();scheduleSide();
+});
 $('#b-side').addEventListener('click',()=>openSide(side.hidden));
 $('#side-close').addEventListener('click',()=>openSide(false));
 $$('.stabs .tab').forEach(b=>b.addEventListener('click',()=>setSideTab(b.dataset.stab)));
@@ -3270,7 +3406,7 @@ setSideTab('list');
 /* ================= Telefono: ricerca, pannello, menu ================= */
 $('#b-search').addEventListener('click',()=>{document.body.classList.add('search-open');q.focus();});
 let gripY=null;
-$('#panel-grip').addEventListener('pointerdown',e=>{e.preventDefault();gripY=e.clientY;try{e.target.setPointerCapture(e.pointerId);}catch(err){}});
+$('#panel-grip').addEventListener('pointerdown',e=>{if(e.pointerType!=='mouse')return;e.preventDefault();gripY=e.clientY;try{e.target.setPointerCapture(e.pointerId);}catch(err){}});
 $('#panel-grip').addEventListener('pointerup',e=>{
   if(gripY==null)return;const dy=e.clientY-gripY;gripY=null;
   if(dy>60){document.body.classList.remove('panel-tall');if(multi.size)clearMulti();else deselect();return;}
@@ -3278,6 +3414,66 @@ $('#panel-grip').addEventListener('pointerup',e=>{
   else if(Math.abs(dy)<8)document.body.classList.toggle('panel-tall');
   $('#panel-grip').setAttribute('aria-label',document.body.classList.contains('panel-tall')?'Riduci il pannello':'Espandi il pannello');
 });
+/* Sul telefono il pannello si trascina con il dito da qualsiasi punto (non solo dalla maniglia):
+   verso l’alto si espande, verso il basso si riduce o si chiude. Se il contenuto è scorso,
+   il primo trascinamento verso il basso lo riporta in cima come un normale scorrimento. */
+let sheet=null;
+function gripLabel(){$('#panel-grip').setAttribute('aria-label',document.body.classList.contains('panel-tall')?'Riduci il pannello':'Espandi il pannello');}
+function sheetReset(anim){
+  const clean=()=>{panel.style.transition='';panel.style.transform='';panel.style.removeProperty('max-height');};
+  if(!anim){clean();return;}
+  panel.style.transition='transform .24s cubic-bezier(.2,.8,.2,1),max-height .26s cubic-bezier(.2,.8,.2,1)';
+  panel.style.transform='';panel.style.removeProperty('max-height');
+  setTimeout(()=>{if(!sheet)panel.style.transition='';},300);
+}
+panel.addEventListener('touchstart',e=>{
+  sheet=null;
+  if(!isNarrow()||e.touches.length!==1||panel.hidden)return;
+  const t=e.target;
+  if(t.closest('textarea,select,input[type=range],.note-tools')||(t.matches('input')&&t===document.activeElement))return;
+  if(document.activeElement===noteEd&&noteEd.contains(t))return;
+  const y=e.touches[0].clientY,x=e.touches[0].clientX,now=performance.now();
+  sheet={x0:x,y0:y,mode:null,h:panel.getBoundingClientRect().height,tall:document.body.classList.contains('panel-tall'),grip:!!t.closest('#panel-grip'),ly:y,lt:now,vy:0};
+},{passive:true});
+panel.addEventListener('touchmove',e=>{
+  const s=sheet;if(!s||e.touches.length!==1)return;
+  const y=e.touches[0].clientY,x=e.touches[0].clientX,now=performance.now();
+  if(now>s.lt){s.vy=s.vy*.4+.6*(y-s.ly)/(now-s.lt);}s.ly=y;s.lt=now;
+  if(!s.mode){
+    const dy=y-s.y0,dx=x-s.x0;
+    if(Math.abs(dy)<7&&Math.abs(dx)<7)return;
+    if(Math.abs(dx)>Math.abs(dy)){s.mode='none';return;}
+    if(dy>0&&panel.scrollTop<=0)s.mode='down';
+    else if(dy<0&&!s.tall)s.mode='up';
+    else s.mode='none';
+    if(s.mode!=='none'){s.y0=y;panel.style.transition='none';}
+  }
+  if(s.mode==='down'){e.preventDefault();const d=Math.max(0,y-s.y0);panel.style.transform='translateY('+d+'px)';}
+  else if(s.mode==='up'){e.preventDefault();const d=Math.max(0,s.y0-y),max=innerHeight-110-(parseFloat(getComputedStyle(panel).bottom)||0);
+    panel.style.setProperty('max-height',Math.min(s.h+d,max)+'px','important');}
+},{passive:false});
+function sheetEnd(e){
+  const s=sheet;sheet=null;if(!s)return;
+  const y=e.changedTouches&&e.changedTouches[0]?e.changedTouches[0].clientY:s.ly;
+  if(!s.mode){if(s.grip&&e.type==='touchend'){document.body.classList.toggle('panel-tall');gripLabel();}return;}
+  if(s.mode==='down'){
+    const d=y-s.y0,fast=s.vy>.55;
+    if(s.tall&&(d>90||fast)&&d<s.h*.55&&!(fast&&d>s.h*.35)){document.body.classList.remove('panel-tall');gripLabel();sheetReset(true);return;}
+    if((!s.tall&&(d>70||fast&&d>20))||(s.tall&&d>=s.h*.35)){
+      panel.style.transition='transform .2s ease-in';panel.style.transform='translateY('+(s.h+120)+'px)';
+      setTimeout(()=>{document.body.classList.remove('panel-tall');gripLabel();if(multi.size)clearMulti();else deselect();sheetReset(false);},190);
+      return;
+    }
+    sheetReset(true);return;
+  }
+  if(s.mode==='up'){
+    const d=s.y0-y;
+    if(d>36||s.vy<-.45){document.body.classList.add('panel-tall');gripLabel();}
+    sheetReset(true);
+  }
+}
+panel.addEventListener('touchend',sheetEnd);
+panel.addEventListener('touchcancel',sheetEnd);
 $('#m-undo').addEventListener('click',()=>{openMenu(false);undo();});
 $('#m-redo').addEventListener('click',()=>{openMenu(false);redo();});
 if(COARSE&&!READONLY)$('#hint').textContent='Trascina per ruotare, pizzica per lo zoom. Tocca un’idea per aprirla, tienila premuta e trascinala per spostarla.';
