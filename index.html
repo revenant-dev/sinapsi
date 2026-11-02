@@ -376,6 +376,27 @@ body.side-open #minimap{display:none}
 .aitem small{grid-column:2;font-size:12.5px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .aitem .when{grid-row:1 / span 2;grid-column:3;font-size:12.5px;font-weight:600;color:var(--ink-soft);text-align:right;white-space:nowrap}
 .aitem .when.late{color:var(--danger)}.aitem .when.soon{color:var(--warn)}
+.tag-add-row{display:flex;gap:8px;margin-top:8px}.tag-add-row .field{flex:1;min-width:0}
+#g-tags:empty{display:none}
+.tag small{color:var(--ink-soft);font-size:12px;margin-left:4px}
+.dlg-choices{display:grid;gap:8px}
+.dlg-choices .act small{display:block;font-weight:400;color:var(--ink-soft);font-size:12.5px;margin-top:3px}
+.titem{margin-bottom:6px;border:1px solid var(--line);border-radius:12px;background:var(--field)}
+.titem.open{border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}
+.trow{display:flex;align-items:center;gap:4px;padding:2px 4px 2px 2px}
+.tname{flex:1;min-width:0;display:flex;align-items:center;gap:8px;text-align:left;background:none;border:0;color:var(--ink);font:inherit;font-size:14.5px;font-weight:600;padding:9px 8px;cursor:pointer;border-radius:10px}
+.tname .otog{pointer-events:none}
+.tname .tlab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tname small{margin-left:auto;font-weight:500;font-size:12.5px;color:var(--ink-soft);white-space:nowrap}
+.tname.active .tlab{color:var(--accent)}
+.ticon{flex:none;width:34px;height:34px;display:grid;place-items:center;border:0;background:none;color:var(--ink-soft);border-radius:10px;cursor:pointer}
+.ticon:hover{background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--ink)}
+.ticon.danger:hover{color:var(--danger)}
+.ticon svg{width:17px;height:17px}
+.trename{flex:1;min-width:0;margin:4px}
+.tbody{padding:2px 8px 8px}
+.tbody .tacts{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px}
+.tbody .aitem{background:transparent}
 .agenda-empty{list-style:none;color:var(--ink-soft);font-size:14px;line-height:1.5;padding:6px 4px}
 /* ===== Notifiche con azione ===== */
 #toast{display:flex;align-items:center;gap:12px}
@@ -456,6 +477,7 @@ body.side-open #minimap{display:none}
     <div class="tabs stabs" role="tablist" aria-label="Elenco e agenda">
       <button class="tab" type="button" role="tab" data-stab="list">Elenco</button>
       <button class="tab" type="button" role="tab" data-stab="agenda">Agenda <span id="agenda-count"></span></button>
+      <button class="tab" type="button" role="tab" data-stab="tags">Tag</button>
     </div>
     <button id="side-close" class="close" type="button" aria-label="Chiudi elenco e agenda">×</button>
   </div>
@@ -465,6 +487,7 @@ body.side-open #minimap{display:none}
     <p class="hint-text side-hint edit-only">Doppio clic su un titolo per rinominarlo, + per aggiungere un’idea sotto.</p>
   </div>
   <div class="spane" data-spane="agenda" hidden><div id="agenda" class="outline"></div></div>
+  <div class="spane" data-spane="tags" hidden><div id="tagman" class="outline"></div><p class="hint-text side-hint edit-only">Tocca un tag per vedere le sue idee. Con la matita lo rinomini (se scegli il nome di un tag esistente, i due si uniscono).</p></div>
 </aside>
 <aside id="panel" class="glass" hidden aria-label="Idea selezionata">
   <button id="panel-grip" class="grip" type="button" aria-label="Espandi il pannello"><span></span></button>
@@ -528,7 +551,7 @@ body.side-open #minimap{display:none}
     <div class="title-row"><h2 id="g-title"></h2><button id="g-close" class="close" type="button" aria-label="Deseleziona tutte">×</button></div>
     <p class="hint-text">Trascina una delle idee selezionate per spostarle tutte insieme. Con Maiusc + clic aggiungi o togli idee.</p>
     <div class="section"><h3>Colore</h3><div class="swatches" id="g-swatches" role="radiogroup" aria-label="Colore di tutte"></div></div>
-    <div class="section"><h3><label for="g-tag">Aggiungi un tag a tutte</label></h3><input id="g-tag" class="field" list="tag-list" maxlength="24" placeholder="Scrivi e premi Invio"></div>
+    <div class="section"><h3><label for="g-tag">Tag</label></h3><div class="tags" id="g-tags"></div><div class="tag-add-row"><input id="g-tag" class="field" list="tag-list" maxlength="24" placeholder="Nuovo tag per tutte" enterkeyhint="done" autocomplete="off"><button id="g-tag-add" class="act small primary" type="button">Aggiungi</button></div></div>
     <div class="section"><h3>Importanza</h3><div class="seg" id="g-imp" role="radiogroup" aria-label="Importanza di tutte"></div></div>
     <div class="actions">
       <button id="g-pin" class="act" type="button">Fissa tutte</button>
@@ -722,6 +745,15 @@ body.side-open #minimap{display:none}
     <p class="small-print" id="auth-status" role="status"></p>
   </div>
 </div>
+<dialog id="dlg-tagdel" class="glass" aria-labelledby="dt-title">
+  <h2 id="dt-title"></h2>
+  <p class="lead" id="dt-lead"></p>
+  <div class="dlg-choices">
+    <button id="dt-remove" class="act" type="button"></button>
+    <button id="dt-delete" class="act danger" type="button"></button>
+  </div>
+  <div class="dlg-actions"><span class="spacer"></span><button class="act dlg-close" type="button">Annulla</button></div>
+</dialog>
 <dialog id="dlg-install" class="glass" aria-labelledby="di-title">
   <h2 id="di-title">Installa Sinapsi</h2>
   <p class="lead">Su iPhone e iPad: apri questa pagina con Safari, tocca il pulsante Condividi (il quadrato con la freccia verso l’alto) e scegli “Aggiungi alla schermata Home”. Sinapsi si aprirà a tutto schermo come un’app.</p>
