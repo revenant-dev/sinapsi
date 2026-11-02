@@ -592,6 +592,41 @@ function clearTimeline(){ticks.forEach(t=>t.el.remove());ticks=[];if(timelineAxi
 function circle(n){const out=[];for(let i=0;i<n;i++){const a=2*Math.PI*i/Math.max(1,n)-Math.PI/2;out.push(new THREE.Vector3(Math.cos(a),Math.sin(a),0));}return out;}
 function sunflower(n){const out=[],g=Math.PI*(3-Math.sqrt(5));for(let i=0;i<n;i++){const r=Math.sqrt((i+.5)/n);out.push(new THREE.Vector3(Math.cos(g*i)*r,Math.sin(g*i)*r,0));}return out;}
 function flatUnit(){const v=randUnit();if(is2D){v.z=0;if(v.lengthSq()<1e-4)v.set(1,0,0);v.normalize();}return v;}
+/* Distanza minima: dopo aver calcolato la disposizione, allontana le idee troppo vicine.
+   In Radiale e A livelli le sposta lungo il loro guscio (la distanza dal centro non cambia),
+   in Cronologia solo in verticale e in profondità (la data resta al suo posto). */
+const MIN_GAP=8;
+function minDist(a,b){return 2.4*((a.radius||3)+(b.radius||3))+MIN_GAP;}
+function separate(vis,mode,root){
+  const list=vis.filter(r=>r.target);if(list.length<2)return;
+  const keepR=mode==='sphere'||mode==='shells',keepX=mode==='timeline';
+  for(const r of list)r._R=r.target.length();
+  let maxR=0;for(const r of list)maxR=Math.max(maxR,r.radius||3);
+  const C=2.4*2*maxR+MIN_GAP,d=new THREE.Vector3();
+  for(let it=0;it<60;it++){
+    const grid=new Map(),key=(x,y,z)=>x+','+y+','+z;
+    for(const r of list){const t=r.target,k=key(Math.floor(t.x/C),Math.floor(t.y/C),Math.floor(t.z/C));(grid.get(k)||grid.set(k,[]).get(k)).push(r);}
+    let moved=0;
+    for(const a of list){
+      const t=a.target,cx=Math.floor(t.x/C),cy=Math.floor(t.y/C),cz=Math.floor(t.z/C);
+      for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++)for(let k=-1;k<=1;k++){
+        const cellL=grid.get(key(cx+i,cy+j,cz+k));if(!cellL)continue;
+        for(const b of cellL){
+          if(b.id<=a.id)continue;
+          d.subVectors(b.target,a.target);if(keepX)d.x=0;if(is2D)d.z=0;
+          let dist=d.length();const m=minDist(a,b);if(dist>=m)continue;
+          if(dist<1e-3){d.set(Math.random()-.5,Math.random()-.5,is2D?0:Math.random()-.5);if(keepX)d.x=0;dist=d.length()||1;}
+          const push=(m-dist)/2/dist;moved++;
+          const fa=a===root?0:b===root?2:1,fb=b===root?0:a===root?2:1;
+          a.target.addScaledVector(d,-push*fa);b.target.addScaledVector(d,push*fb);
+        }
+      }
+    }
+    if(keepR)for(const r of list){if(r===root||r._R<1e-3)continue;const L=r.target.length();if(L>1e-6)r.target.multiplyScalar(r._R/L);}
+    if(is2D)for(const r of list)r.target.z=0;
+    if(!moved)break;
+  }
+}
 function computeLayout(silent){
   clearTimeline();
   const mode=map.layout||'force';
@@ -640,6 +675,7 @@ function computeLayout(silent){
     const nT=span>0?4:0;
     for(let i=0;i<=nT;i++){const t=min+span*i/nT;const el=mk('div','tick',fmtShort.format(new Date(t))+' '+new Date(t).getFullYear());labelsEl.appendChild(el);ticks.push({el,pos:V(-W+2*W*i/nT,yAxis-10,0),vis:false});}
   }
+  separate(vis,mode,root);
   layoutMoving=true;
 }
 function setLayout(mode){
